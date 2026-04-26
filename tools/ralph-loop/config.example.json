@@ -1,0 +1,13 @@
+{
+  "projectRoot": ".",
+  "specPath": "docs/architecture/2026-04-25-ralph-loop-design.md",
+  "planPath": "docs/plans/2026-04-25-ralph-loop-harness.md",
+  "statePath": "tools/ralph-loop/state/current-run.json",
+  "logsDir": "tools/ralph-loop/logs",
+  "systemPromptPath": "tools/ralph-loop/prompts/system.md",
+  "iterationPromptPath": "tools/ralph-loop/prompts/iteration.md",
+  "agentPreset": "codex",
+  "agentCommandTemplate": "",
+  "maxIterations": 10,
+  "dryRun": true
+}

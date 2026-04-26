@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+apps/client/node_modules/
+
+# Builds
+dist/
+build/
+apps/client/dist/
+apps/client/android/.gradle/
+apps/client/android/build/
+apps/client/android/app/build/
+legacy/rust-backend/target/
+target/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Runtime/local data
+library/
+apps/api/data/
+_scratch/
+tools/ralph-loop/logs/*.log
+.playwright-mcp/
+apps/client/android/app/src/main/assets/public/assets/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+*.swp

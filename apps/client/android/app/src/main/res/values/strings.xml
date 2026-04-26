@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">CapDown</string>
+    <string name="title_activity_main">CapDown</string>
+    <string name="package_name">com.capdown.app</string>
+    <string name="custom_url_scheme">com.capdown.app</string>
+</resources>

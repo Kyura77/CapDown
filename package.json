@@ -1,0 +1,28 @@
+{
+  "name": "capdown",
+  "version": "1.0.0",
+  "description": "CapDown - Premium Offline Manhwa Library",
+  "main": "index.js",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n \"API,CLIENT\" -c \"bgBlue.bold,bgMagenta.bold\" \"npm run dev:v2:api\" \"npm --workspace @capdown/client run dev\"",
+    "install-all": "npm install",
+    "ralph:dry-run": "node tools/ralph-loop/bin/run.mjs --dry-run",
+    "ralph:run": "node tools/ralph-loop/bin/run.mjs",
+    "ralph:run:codex": "node tools/ralph-loop/bin/run.mjs --agent codex",
+    "ralph:run:gemini": "node tools/ralph-loop/bin/run.mjs --agent gemini",
+    "ralph:test": "node --test tools/ralph-loop/tests/config.test.mjs tools/ralph-loop/tests/plan-parser.test.mjs tools/ralph-loop/tests/agent-command.test.mjs",
+    "dev:v2:api": "npm --workspace @capdown/api run dev",
+    "start:v2:api": "npm --workspace @capdown/api run start",
+    "build:client": "npm --workspace @capdown/client run build",
+    "check:v2:scraper": "python -m py_compile services/scraper/app/main.py services/scraper/app/schemas.py",
+    "infra:up": "docker compose -f infra/docker-compose.yml up -d",
+    "infra:down": "docker compose -f infra/docker-compose.yml down"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
