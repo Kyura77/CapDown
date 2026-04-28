@@ -1,59 +1,44 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 
-const PLACEHOLDER = 'https://placehold.co/400x600/10120f/bcff4d?text=CapDown';
+const COVER_FALLBACK = 'https://placehold.co/400x600/0d0d0f/b8ff4a?text=Cap';
 
 export function MediaCard({ item, onClick, onDelete }) {
   const isNovel = item.media_type === 'novel';
-  const coverUrl = item.cover_url || PLACEHOLDER;
+  const src = item.cover_url || COVER_FALLBACK;
 
   return (
-    <motion.div 
-      className="media-card"
-      whileHover={{ y: -6 }}
-      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+    <motion.div className="card"
       onClick={onClick}
+      whileHover={{ y: -5 }}
+      transition={{ type: 'spring', stiffness: 320, damping: 22 }}
     >
-      <div className="media-cover-container">
+      <div className="card-img-wrap">
         {onDelete && (
-          <button 
-            className="delete-btn" 
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(item);
-            }}
-            aria-label="Delete media"
-          >
-            ✕
-          </button>
+          <button className="card-del"
+            onClick={e => { e.stopPropagation(); onDelete(item); }}
+            aria-label="Remover"
+          >✕</button>
         )}
-        
-        <img 
-          src={coverUrl} 
-          alt={item.title} 
-          className="media-cover" 
-          onError={(e) => { e.currentTarget.src = PLACEHOLDER; }} 
-        />
-        
-        <div className="media-overlay" />
-        
-        <div className="media-badge">
-          {isNovel ? 'NOVEL' : 'MANGA'}
-        </div>
-        
-        {item.rating && (
-          <div className="media-rating">
-            {item.rating}
-          </div>
-        )}
+        <img className="card-img" src={src} alt={item.title}
+          onError={e => { e.currentTarget.src = COVER_FALLBACK; }} />
+        <div className="card-shade" />
+        <span className="card-tag">{isNovel ? 'NOVEL' : 'MANGA'}</span>
       </div>
-      
-      <div className="media-info">
-        <h3 className="media-title">{item.title}</h3>
-        <p className="media-meta">
-          {item.chapters?.length || 0} {isNovel ? 'parts' : 'caps'}
-        </p>
+      <div className="card-info">
+        <div className="card-name">{item.title}</div>
+        <div className="card-meta">{item.chapters?.length ?? 0} {isNovel ? 'partes' : 'caps'}</div>
       </div>
     </motion.div>
+  );
+}
+
+export function CardSkeleton() {
+  return (
+    <div>
+      <div className="skel card-skel-img" />
+      <div className="skel card-skel-name" />
+      <div className="skel card-skel-meta" />
+    </div>
   );
 }

@@ -1,54 +1,43 @@
 import React from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
-import { Library, Download, Clock, Bookmark, Settings } from 'lucide-react';
+import { NavLink } from 'react-router-dom';
+import { BookOpen, Clock, Download, Settings } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const NAV = [
-  { to: '/', icon: <Library size={18} />, label: 'Library' },
-  { to: '/downloads', icon: <Download size={18} />, label: 'Queue' },
-  { to: '/recent', icon: <Clock size={18} />, label: 'Recent' },
-  { to: '/bookmarks', icon: <Bookmark size={18} />, label: 'Bookmarks' },
-  { to: '/settings', icon: <Settings size={18} />, label: 'Settings' },
+  { to: '/',          icon: BookOpen,  label: 'Biblioteca' },
+  { to: '/downloads', icon: Download,  label: 'Downloads'  },
+  { to: '/recent',    icon: Clock,     label: 'Recentes'   },
+  { to: '/settings',  icon: Settings,  label: 'Ajustes'    },
 ];
-
-const NavItem = ({ to, icon, label }) => {
-  return (
-    <NavLink
-      to={to}
-      end={to === '/'}
-      className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}
-    >
-      {icon}
-      <span>{label}</span>
-    </NavLink>
-  );
-};
 
 export function Sidebar() {
   return (
-    <aside className="sidebar-glass">
-      <div className="sidebar-brand">
-        <div className="brand-logo"></div>
+    <aside className="sidebar">
+      <div className="sidebar-logo">
+        <div className="sidebar-logo-mark" />
         CAPDOWN
       </div>
-      
+
       <nav className="sidebar-nav">
-        {NAV.map((item) => (
-          <NavItem key={item.to} {...item} />
+        {NAV.map(({ to, icon: Icon, label }) => (
+          <NavLink key={to} to={to} end={to === '/'}
+            className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
+          >
+            <Icon size={17} />
+            {label}
+          </NavLink>
         ))}
       </nav>
 
-      <div className="sidebar-storage">
-        <div className="storage-label">Storage</div>
+      <div className="sidebar-footer">
+        <div className="storage-label">Armazenamento</div>
         <div className="storage-bar">
-          <motion.div 
-            className="storage-fill" 
-            initial={{ width: 0 }} 
-            animate={{ width: '65%' }} 
-            transition={{ duration: 1, delay: 0.2 }}
+          <motion.div className="storage-fill"
+            initial={{ width: 0 }} animate={{ width: '62%' }}
+            transition={{ duration: 1.2, ease: 'easeOut', delay: 0.3 }}
           />
         </div>
-        <div className="storage-details">12.4 GB / 20 GB</div>
+        <div className="storage-text">12.4 GB / 20 GB</div>
       </div>
     </aside>
   );

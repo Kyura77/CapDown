@@ -1,0 +1,98 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Settings {
+  id               String   @id @default("default")
+  telegram_token   String?
+  telegram_chat_id String?
+  updated_at       DateTime @updatedAt
+}
+
+model AuthSession {
+  provider_id    String    @id
+  connected      Boolean   @default(false)
+  last_solved_at DateTime?
+  url            String?
+  wait_seconds   Int?
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+}
+
+model AuthAccount {
+  id          String   @id @default(cuid())
+  provider_id String
+  username    String
+  password    String   // Store carefully!
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@unique([provider_id, username])
+}
+
+model DownloadJob {
+  id                  String   @id @default(cuid())
+  url                 String
+  status              String   // queued, downloading, completed, failed
+  manga_title         String?
+  current_chapter     String?
+  downloaded_pages    Int      @default(0)
+  total_pages         Int      @default(0)
+  downloaded_chapters Int      @default(0)
+  total_chapters      Int      @default(0)
+  error               String?
+  
+  // Internal tracking (serialized as JSON strings for SQLite compatibility)
+  chapters_json       String?   // JSON array of strings
+  concurrency         Int      @default(3)
+  source_manga_id     String?
+  source_chapters_json String?  // JSON array of strings
+  source_title        String?
+  source_provider_id  String?
+  terminal_reason     String?
+
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+}
+
+model LibraryManga {
+  id          String           @id @default(cuid())
+  provider_id String
+  media_type  String           @default("manga")
+  source_id   String
+  source_url  String
+  title       String
+  cover_url   String?
+  chapters    LibraryChapter[]
+  updated_at  DateTime         @updatedAt
+  created_at  DateTime         @default(now())
+}
+
+model LibraryChapter {
+  id            String        @id @default(cuid())
+  source_id     String
+  title         String
+  number        String?
+  source_url    String
+  page_count    Int           @default(0)
+  downloaded_at DateTime      @default(now())
+  manga_id      String
+  manga         LibraryManga  @relation(fields: [manga_id], references: [id], onDelete: Cascade)
+  pages         LibraryPage[]
+}
+
+model LibraryPage {
+  id                  String         @id @default(cuid())
+  index               Int
+  telegram_file_id    String         // TELEGRAM FIRST ARCHITECTURE
+  telegram_message_id Int?
+  chapter_id          String
+  chapter             LibraryChapter @relation(fields: [chapter_id], references: [id], onDelete: Cascade)
+
+  @@unique([chapter_id, index])
+}

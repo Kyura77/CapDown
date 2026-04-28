@@ -20,14 +20,17 @@ async function fetchProviderCatalog() {
 export function ProviderCatalogProvider({ children }) {
   const [providers, setProviders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const refreshProviders = useCallback(async () => {
     setLoading(true);
     try {
       setProviders(await fetchProviderCatalog());
-    } catch (error) {
-      console.error('Failed to fetch providers:', error);
+      setError(null);
+    } catch (err) {
+      console.error('Failed to fetch providers:', err);
       setProviders([]);
+      setError(err);
     } finally {
       setLoading(false);
     }
@@ -41,11 +44,13 @@ export function ProviderCatalogProvider({ children }) {
         const nextProviders = await fetchProviderCatalog();
         if (active) {
           setProviders(nextProviders);
+          setError(null);
         }
-      } catch (error) {
+      } catch (err) {
         if (active) {
-          console.error('Failed to fetch providers:', error);
+          console.error('Failed to fetch providers:', err);
           setProviders([]);
+          setError(err);
         }
       } finally {
         if (active) {
@@ -62,8 +67,8 @@ export function ProviderCatalogProvider({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ providers, loading, refreshProviders }),
-    [loading, providers, refreshProviders],
+    () => ({ providers, loading, error, refreshProviders }),
+    [loading, error, providers, refreshProviders],
   );
 
   return <ProviderCatalogContext.Provider value={value}>{children}</ProviderCatalogContext.Provider>;

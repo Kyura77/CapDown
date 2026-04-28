@@ -4,7 +4,6 @@ import {
   type AuthSession,
   type DownloadJob,
   type DownloadRequest,
-  type LibraryIndex,
   type LibraryManga,
   type PrepareTelegramResponse,
   type VerifyLibraryResponse,
@@ -12,24 +11,14 @@ import {
   type SyncMangaResponse,
 } from "@capdown/contracts";
 import { AppError } from "./errors.js";
-import { AppStateRepository, compareChaptersByNumber, type StoredDownloadJob } from "../repositories/app-state-repository.js";
-import { previewProviderSource } from "../services/providers.js";
-import { DownloadWorker } from "../services/download-worker.js";
 
-type DownloadPlan = {
-  jobId: string;
+import type { IAuthRepository, IDownloadsRepository, ILibraryRepository, ISettingsRepository, StoredDownloadJob } from "../repositories/interfaces.js";
+import { previewProviderSource } from "../services/providers.js";
+import type { DownloadPlan } from "../services/download-worker.js";
+import { DownloadQueue } from "../queues/download-queue.js";
+
+type InternalDownloadPlan = DownloadPlan & {
   knownSource: boolean;
-  mangaId: string | null;
-  mangaTitle: string | null;
-  sourceProviderId: string | null;
-  sourceChapterIds: string[];
-  chapters: Array<{
-    id: string;
-    title: string;
-    pageCount: number;
-  }>;
-  totalPages: number;
-  totalChapters: number;
 };
 
 function nowIso() {
@@ -49,30 +38,55 @@ function stripDownloadJob(job: StoredDownloadJob): DownloadJob {
   return publicJob;
 }
 
-function buildDownloadError(message: string) {
-  return new AppError(409, "download_source_unavailable", message);
+type LibraryChapter = LibraryManga['chapters'][number];
+
+function compareChaptersByNumber(left: LibraryChapter, right: LibraryChapter): number {
+  const l = left.number === null ? null : Number(left.number);
+  const r = right.number === null ? null : Number(right.number);
+
+  if (Number.isFinite(l) && Number.isFinite(r) && l !== r) return (l as number) - (r as number);
+  if (Number.isFinite(l)) return -1;
+  if (Number.isFinite(r)) return 1;
+
+  const byTitle = left.title.localeCompare(right.title, 'pt-BR', { numeric: true, sensitivity: 'base' });
+  if (byTitle !== 0) return byTitle;
+
+  return left.source_id.localeCompare(right.source_id, 'pt-BR', { numeric: true, sensitivity: 'base' });
 }
 
 export class ProductStateService {
-  private readonly downloadTimers = new Map<string, { queued?: ReturnType<typeof setTimeout>; downloading?: ReturnType<typeof setTimeout> }>();
-  private readonly downloadWorker: DownloadWorker;
+  private readonly downloadQueue: DownloadQueue;
 
-  constructor(private readonly repository: AppStateRepository) {
-    this.downloadWorker = new DownloadWorker(repository);
+  constructor(
+    private readonly settingsRepo: ISettingsRepository,
+    private readonly authRepo: IAuthRepository,
+    private readonly libraryRepo: ILibraryRepository,
+    private readonly downloadsRepo: IDownloadsRepository,
+  ) {
+    this.downloadQueue = new DownloadQueue(downloadsRepo, settingsRepo, libraryRepo);
   }
 
-  async init() {
-    const state = await this.repository.snapshot();
-    await this.backfillMissingLibraryCovers(state.library.manga);
-    for (const job of state.downloads) {
-      if (job.status === "queued" || job.status === "downloading") {
+  async init(): Promise<void> {
+    await this.downloadQueue.start();
+
+    const downloads = await this.downloadsRepo.listDownloads();
+    for (const job of downloads) {
+      if (job.status === 'queued' || job.status === 'downloading') {
         await this.hydrateDownloadJob(job);
       }
     }
   }
 
+  /** Manually trigger cover backfill — call via POST /api/library/backfill-covers */
+  async backfillCovers(): Promise<{ backfilled: number }> {
+    const library = await this.libraryRepo.listLibrary();
+    const before = library.manga.filter(m => !m.cover_url && m.source_url).length;
+    await this.backfillMissingLibraryCovers(library.manga);
+    return { backfilled: before };
+  }
+
   async getSettings() {
-    const settings = await this.repository.getSettings();
+    const settings = await this.settingsRepo.getSettings();
     return {
       telegram_token: settings.telegram_token ?? "",
       telegram_chat_id: settings.telegram_chat_id ?? "",
@@ -80,7 +94,7 @@ export class ProductStateService {
   }
 
   async saveSettings(input: AppSettings) {
-    await this.repository.setSettings({
+    await this.settingsRepo.setSettings({
       telegram_token: input.telegram_token ?? null,
       telegram_chat_id: input.telegram_chat_id ?? null,
     });
@@ -89,37 +103,36 @@ export class ProductStateService {
   }
 
   async saveAccount(input: { provider_id: string; username: string; password: string }) {
-    await this.repository.upsertAuthAccount({
-      provider_id: input.provider_id as never,
+    await this.authRepo.upsertAuthAccount({
+      provider_id: input.provider_id as ProviderId,
       username: input.username,
       password: input.password,
     });
-
-    return { status: "ok" };
+    return { status: 'ok' };
   }
 
   async getAuthSession(providerId: string): Promise<AuthSession> {
-    return this.repository.getAuthSession(providerId);
+    return this.authRepo.getAuthSession(providerId);
   }
 
   async solveAuth(input: { provider_id: string; url: string; wait_seconds?: number }) {
-    await this.repository.setAuthSession(input.provider_id, {
+    await this.authRepo.setAuthSession(input.provider_id, {
       connected: true,
       last_solved_at: nowIso(),
       url: input.url,
-      wait_seconds: input.wait_seconds ?? null,
+      wait_seconds: input.wait_seconds,
     });
 
     return { status: "ok" };
   }
 
   async listDownloads() {
-    const jobs = await this.repository.listDownloads();
+    const jobs = await this.downloadsRepo.listDownloads();
     return jobs.map(stripDownloadJob);
   }
 
   async getDownload(id: string) {
-    const job = await this.repository.getDownload(id);
+    const job = await this.downloadsRepo.getDownload(id);
     if (!job) {
       throw new AppError(404, "download_not_found", "Download job not found");
     }
@@ -151,7 +164,7 @@ export class ProductStateService {
       terminal_reason: plan.knownSource ? null : "source_not_found",
     };
 
-    await this.repository.saveDownload(createdJob);
+    await this.downloadsRepo.saveDownload(createdJob);
 
     if (plan.knownSource) {
       this.scheduleProgression(createdJob.id, plan);
@@ -161,24 +174,16 @@ export class ProductStateService {
   }
 
   async deleteDownload(id: string) {
-    const timers = this.downloadTimers.get(id);
-    if (timers) {
-      if (timers.queued) clearTimeout(timers.queued);
-      if (timers.downloading) clearTimeout(timers.downloading);
-      this.downloadTimers.delete(id);
-    }
-    
-    this.downloadWorker.cancelJob(id);
-
-    return this.repository.deleteDownload(id);
+    await this.downloadQueue.remove(id);
+    return this.downloadsRepo.deleteDownload(id);
   }
 
   async listLibrary() {
-    return this.repository.listLibrary();
+    return this.libraryRepo.listLibrary();
   }
 
   async getManga(id: string) {
-    const manga = await this.repository.getManga(id);
+    const manga = await this.libraryRepo.getManga(id);
     if (!manga) {
       throw new AppError(404, "manga_not_found", "Manga not found");
     }
@@ -187,31 +192,31 @@ export class ProductStateService {
   }
 
   async deleteManga(id: string) {
-    return this.repository.deleteManga(id);
+    return this.libraryRepo.deleteManga(id);
   }
 
   async getReaderChapter(mangaId: string, chapterId: string) {
-    return this.repository.getReaderChapterPayload(mangaId, chapterId);
+    return this.libraryRepo.getReaderChapterPayload(mangaId, chapterId);
   }
 
   async verifyLibrary(): Promise<VerifyLibraryResponse> {
-    return this.repository.verifyLibrary();
+    return this.libraryRepo.verifyLibrary();
   }
 
   async prepareTelegram(mangaId: string): Promise<PrepareTelegramResponse> {
-    return this.repository.prepareTelegram(mangaId);
+    return this.libraryRepo.prepareTelegram(mangaId);
   }
 
   async auditManga(mangaId: string): Promise<AuditMangaResponse> {
-    return this.repository.auditManga(mangaId);
+    return this.libraryRepo.auditManga(mangaId);
   }
 
   async syncManga(mangaId: string): Promise<SyncMangaResponse> {
-    return this.repository.syncManga(mangaId);
+    return this.libraryRepo.syncManga(mangaId);
   }
 
   async getTelegramPageImage(chapterId: string, pageIndex: number) {
-    return this.repository.getTelegramPageImage(chapterId, pageIndex);
+    return this.libraryRepo.getTelegramPageImage(chapterId, pageIndex);
   }
 
   private async backfillMissingLibraryCovers(mangaList: LibraryManga[]) {
@@ -242,25 +247,20 @@ export class ProductStateService {
       return;
     }
 
-    await this.repository.mutate((state) => {
-      for (const manga of state.library.manga) {
-        if (!manga.cover_url) {
-          const coverUrl = coverByMangaId.get(manga.id);
-          if (coverUrl) {
-            manga.cover_url = coverUrl;
-          }
-        }
+    for (const [mangaId, coverUrl] of coverByMangaId.entries()) {
+      const manga = await this.libraryRepo.getManga(mangaId);
+      if (manga && !manga.cover_url) {
+        manga.cover_url = coverUrl;
+        await this.libraryRepo.upsertManga(manga);
       }
-
-      return null;
-    });
+    }
   }
 
-  private async buildDownloadPlan(input: DownloadRequest): Promise<DownloadPlan> {
-    const state = await this.repository.snapshot();
+  private async buildDownloadPlan(input: DownloadRequest): Promise<InternalDownloadPlan> {
+    const library = await this.libraryRepo.listLibrary();
     const targetUrl = normalizeUrl(input.url);
 
-    const manga = state.library.manga.find((entry) =>
+    const manga = library.manga.find((entry) =>
       normalizeUrl(entry.source_url) === targetUrl ||
       entry.chapters.some((chapter) => normalizeUrl(chapter.source_url) === targetUrl),
     );
@@ -269,14 +269,14 @@ export class ProductStateService {
       return {
         jobId: randomUUID(),
         knownSource: false,
-        mangaId: null,
+        mangaId: '',
         mangaTitle: null,
         sourceProviderId: null,
         sourceChapterIds: [],
         chapters: [],
         totalPages: 0,
         totalChapters: 0,
-      };
+      } as InternalDownloadPlan;
     }
 
     const sortedChapters = [...manga.chapters].sort(compareChaptersByNumber);
@@ -303,17 +303,17 @@ export class ProductStateService {
         id: chapter.id,
         title: chapter.title,
         pageCount: chapter.pages.length,
+        sourceUrl: chapter.source_url,
       })),
       totalPages: selectedChapters.reduce((total, chapter) => total + chapter.pages.length, 0),
       totalChapters: selectedChapters.length,
-    };
+    } as InternalDownloadPlan;
   }
 
-  private scheduleProgression(jobId: string, plan: DownloadPlan) {
-    // Substituída simulação de setTimeout pela integração do worker real
-    this.downloadWorker.processJob(jobId, plan).catch(err => {
-      console.error(`DownloadWorker failed for ${jobId}:`, err);
-    });
+  private scheduleProgression(_jobId: string, plan: InternalDownloadPlan): void {
+    void this.downloadQueue.enqueue(plan).catch((err) =>
+      console.error('[service] Failed to enqueue download:', err),
+    );
   }
 
   private async hydrateDownloadJob(job: StoredDownloadJob) {
@@ -322,36 +322,21 @@ export class ProductStateService {
     }
 
     if (!job.source_manga_id) {
-      await this.repository.mutate((state) => {
-        const current = state.downloads.find((entry) => entry.id === job.id);
-        if (!current || current.status === "failed" || current.status === "completed") {
-          return null;
-        }
-
-        current.status = "failed";
-        current.error = current.error ?? "download_source_unavailable: download was restored without source metadata";
-        current.terminal_reason = "missing_source_metadata";
-        current.updated_at = nowIso();
-        return null;
-      });
+      job.status = "failed";
+      job.error = job.error ?? "download_source_unavailable: download was restored without source metadata";
+      job.terminal_reason = "missing_source_metadata";
+      job.updated_at = nowIso();
+      await this.downloadsRepo.saveDownload(job);
       return;
     }
 
-    const state = await this.repository.snapshot();
-    const manga = state.library.manga.find((entry) => entry.id === job.source_manga_id);
+    const manga = await this.libraryRepo.getManga(job.source_manga_id);
     if (!manga) {
-      await this.repository.mutate((currentState) => {
-        const current = currentState.downloads.find((entry) => entry.id === job.id);
-        if (!current || current.status === "failed" || current.status === "completed") {
-          return null;
-        }
-
-        current.status = "failed";
-        current.error = "download_source_unavailable: source manga no longer exists in local library state";
-        current.terminal_reason = "source_manga_missing";
-        current.updated_at = nowIso();
-        return null;
-      });
+      job.status = "failed";
+      job.error = "download_source_unavailable: source manga no longer exists in local library state";
+      job.terminal_reason = "source_manga_missing";
+      job.updated_at = nowIso();
+      await this.downloadsRepo.saveDownload(job);
       return;
     }
 
@@ -359,7 +344,7 @@ export class ProductStateService {
       ? manga.chapters.filter((chapter) => job.source_chapter_ids.includes(chapter.id))
       : [...manga.chapters].sort(compareChaptersByNumber);
 
-    const plan: DownloadPlan = {
+    const plan: InternalDownloadPlan = {
       jobId: job.id,
       knownSource: true,
       mangaId: manga.id,
@@ -370,10 +355,11 @@ export class ProductStateService {
         id: chapter.id,
         title: chapter.title,
         pageCount: chapter.pages.length,
+        sourceUrl: chapter.source_url,
       })),
       totalPages: selectedChapters.reduce((total, chapter) => total + chapter.pages.length, 0),
       totalChapters: selectedChapters.length,
-    };
+    } as InternalDownloadPlan;
 
     this.scheduleProgression(job.id, plan);
   }

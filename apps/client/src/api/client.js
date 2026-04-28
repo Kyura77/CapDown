@@ -9,6 +9,9 @@ export const API_BASE_URL = resolveApiBaseUrl().baseUrl;
 // automaticamente para POST/PUT com body JSON.
 const client = axios.create({
   baseURL: API_BASE_URL,
+  headers: {
+    'x-api-key': 'dev-key-123'
+  }
 });
 
 export const api = {

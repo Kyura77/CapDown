@@ -6,7 +6,12 @@ import type { ProductStateService } from "../store/product-state-service.js";
 export async function registerSettingsRoutes(app: FastifyInstance, stateService: ProductStateService) {
   app.get('/api/settings', async (_request, reply) => {
     try {
-      return await stateService.getSettings();
+      const settings = await stateService.getSettings();
+      // Never return the full token — only signal whether it is configured
+      return {
+        has_telegram_token: Boolean(settings.telegram_token),
+        telegram_chat_id: settings.telegram_chat_id ?? '',
+      };
     } catch (error) {
       return sendAppError(reply, error);
     }

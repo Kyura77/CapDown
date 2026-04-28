@@ -29,3 +29,6 @@ apps/client/android/app/src/main/assets/public/assets/
 .DS_Store
 Thumbs.db
 *.swp
+
+tools/ralph-loop/state/*.json
+tools/ralph-loop/state/*.md

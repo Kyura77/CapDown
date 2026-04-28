@@ -10,7 +10,8 @@ export async function registerScrapeRoute(
     const parsed = scrapeRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({
-        error: 'invalid_request',
+        code: 'invalid_request',
+        message: 'Invalid scrape request payload',
         details: parsed.error.flatten(),
       });
     }

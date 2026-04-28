@@ -12,5 +12,5 @@ export interface ProviderAdapter {
   canHandleUrl(url: URL): boolean;
   search(input: ProviderSearchInput): Promise<SearchResponse>;
   preview(url: URL): Promise<PreviewResponse>;
-  getChapterPages?(chapterSourceId: string): Promise<Array<{ url: string; index: number; filename: string }>>;
+  getChapterPages?(chapterSourceId: string, chapterUrl?: string): Promise<Array<{ url: string; index: number; filename: string }>>;
 }

@@ -42,12 +42,16 @@ async function withFetchStub<T>(
   }
 }
 
-test("provider catalog exposes Verdinha and MangaDex", () => {
+test("provider catalog exposes Verdinha, MangaDex and EgoToons as enabled", () => {
   const catalog = listProviderCatalog();
-  assert.deepEqual(
-    catalog.map((provider) => provider.id),
-    ["verdinha", "manga_dex"],
-  );
+  const enabledIds = catalog.filter(p => p.status === 'enabled').map(p => p.id);
+  assert.ok(enabledIds.includes("verdinha"), 'verdinha should be enabled');
+  assert.ok(enabledIds.includes("manga_dex"), 'manga_dex should be enabled');
+  assert.ok(enabledIds.includes("ego_toons"), 'ego_toons should be enabled');
+
+  // Providers without adapters should be unavailable
+  const unavailableIds = catalog.filter(p => p.status === 'unavailable').map(p => p.id);
+  assert.ok(!unavailableIds.includes("verdinha"), 'verdinha should not be unavailable');
 });
 
 test("search routes Verdinha queries to the Verdinha API", async () => {

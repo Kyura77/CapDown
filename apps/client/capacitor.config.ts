@@ -5,8 +5,7 @@ const config: CapacitorConfig = {
   appName: 'CapDown',
   webDir: 'dist',
   server: {
-    cleartext: true,
-    allowNavigation: ['192.168.100.14', '127.0.0.1', 'localhost']
+    androidScheme: 'https'
   }
 };
 

@@ -1,0 +1,41 @@
+name: Verify
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build-and-lint:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: TypeScript Check (API)
+      run: npx tsc --noEmit -p apps/api/tsconfig.json
+      
+    - name: Lint (Client)
+      run: npm --workspace @capdown/client run lint
+
+    - name: Tests (API providers)
+      run: node --import tsx --test apps/api/test/providers.test.ts
+
+    - name: Tests (Ralph Loop)
+      run: node --test tools/ralph-loop/tests/config.test.mjs tools/ralph-loop/tests/plan-parser.test.mjs tools/ralph-loop/tests/agent-command.test.mjs
+
+    - name: Python compile check
+      run: python -m compileall apps/scraper
+
+    - name: Security audit
+      run: npm audit --omit=dev --audit-level=high

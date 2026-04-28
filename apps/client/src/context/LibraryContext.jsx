@@ -16,13 +16,16 @@ export const useLibrary = () => useContext(LibraryContext);
 export const LibraryProvider = ({ children }) => {
   const [library, setLibrary] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const refreshLibrary = useCallback(async () => {
     try {
       const response = await api.getLibrary();
       setLibrary(response.data);
-    } catch (error) {
-      console.error('Failed to fetch library:', error);
+      setError(null);
+    } catch (err) {
+      console.error('Failed to fetch library:', err);
+      setError(err);
     }
   }, []);
 
@@ -36,8 +39,8 @@ export const LibraryProvider = ({ children }) => {
   }, [refreshLibrary]);
 
   const value = useMemo(
-    () => ({ library, loading, refreshLibrary }),
-    [library, loading, refreshLibrary],
+    () => ({ library, loading, error, refreshLibrary }),
+    [library, loading, error, refreshLibrary],
   );
 
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;

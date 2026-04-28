@@ -1,7 +1,7 @@
 const API_URL_STORAGE_KEY = 'capdown:api_url';
 
 export const DEFAULT_DESKTOP_API = 'http://127.0.0.1:4540';
-export const DEFAULT_ANDROID_API = 'http://192.168.100.14:4540';
+export const DEFAULT_ANDROID_API = 'https://api.capdown.net';
 
 export function isNativeAndroid() {
   const capacitor = window.Capacitor;

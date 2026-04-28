@@ -18,6 +18,8 @@ export const useDownloads = () => useContext(DownloadsContext);
 export function DownloadsProvider({ children }) {
   const { refreshLibrary } = useLibrary();
   const [downloads, setDownloads] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const isRefreshing = useRef(false);
   const previousDownloadsRef = useRef([]);
 
@@ -25,8 +27,10 @@ export function DownloadsProvider({ children }) {
     try {
       const response = await api.getDownloads();
       setDownloads(response.data);
-    } catch (error) {
-      console.error('Failed to fetch downloads:', error);
+      setError(null);
+    } catch (err) {
+      console.error('Failed to fetch downloads:', err);
+      setError(err);
     }
   }, []);
 
@@ -36,10 +40,19 @@ export function DownloadsProvider({ children }) {
       .then((response) => {
         if (active) {
           setDownloads(response.data);
+          setError(null);
         }
       })
-      .catch((error) => {
-        console.error('Failed to fetch downloads:', error);
+      .catch((err) => {
+        if (active) {
+          console.error('Failed to fetch downloads:', err);
+          setError(err);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
       });
 
     return () => {
@@ -88,8 +101,8 @@ export function DownloadsProvider({ children }) {
   }, [downloads, refreshLibrary]);
 
   const value = useMemo(
-    () => ({ downloads, refreshDownloads }),
-    [downloads, refreshDownloads],
+    () => ({ downloads, loading, error, refreshDownloads }),
+    [downloads, loading, error, refreshDownloads],
   );
 
   return <DownloadsContext.Provider value={value}>{children}</DownloadsContext.Provider>;

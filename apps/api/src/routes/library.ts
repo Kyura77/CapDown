@@ -86,10 +86,18 @@ export async function registerLibraryRoutes(app: FastifyInstance, stateService: 
     }
   });
 
-  app.get("/api/library/:id/audit", async (request, reply) => {
+  app.post("/api/library/:id/audit", async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
       return await stateService.auditManga(id);
+    } catch (error) {
+      return sendAppError(reply, error);
+    }
+  });
+
+  app.post("/api/library/backfill-covers", async (_request, reply) => {
+    try {
+      return await stateService.backfillCovers();
     } catch (error) {
       return sendAppError(reply, error);
     }

@@ -1,104 +1,86 @@
 import React from 'react';
-import { Search, Filter, Loader2, Sparkles, Zap } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Filter, Loader2, Search, Sparkles, Zap } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 
-export function SearchBar({ 
-  query, 
-  setQuery, 
-  onSearch, 
-  loading, 
-  mode, 
-  setMode, 
-  showFilters, 
-  setShowFilters,
-  deepSearch,
-  setDeepSearch,
-  availableProviders,
-  selectedProviders,
-  toggleProvider,
-  sortBy,
-  setSortBy
+export function SearchBar({
+  query, setQuery, onSearch, loading,
+  mode, setMode, showFilters, setShowFilters,
+  deepSearch, setDeepSearch,
+  availableProviders = [], selectedProviders, toggleProvider,
+  sortBy, setSortBy,
 }) {
   return (
-    <div className="search-surface-glass">
-      <form className="search-row-glass" onSubmit={onSearch}>
-        <div className="search-input-wrapper">
-          <Search size={18} className="search-icon" />
-          <input
-            className="search-input-glass"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={mode === 'ai' ? 'Search by title, genre, or paste a URL...' : 'Title or URL...'}
-          />
-        </div>
-        
-        <button 
-          type="button" 
-          className={`icon-btn-glass ${showFilters ? 'active' : ''}`} 
-          onClick={() => setShowFilters(!showFilters)} 
-          aria-label="Filters"
+    <div className="search-wrap">
+      <form className="search-box" onSubmit={onSearch}>
+        <Search size={16} style={{ color: 'var(--txt3)', flexShrink: 0, marginLeft: 4 }} />
+        <input
+          className="search-input"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder={mode === 'ai' ? 'Título, gênero ou URL...' : 'Título ou URL...'}
+        />
+        <button type="button"
+          className={`btn btn-ghost btn-icon${showFilters ? ' text-green' : ''}`}
+          onClick={() => setShowFilters(v => !v)}
+          aria-label="Filtros"
         >
-          <Filter size={20} />
+          <Filter size={16} />
         </button>
-        
-        <button className="btn-glass-primary" disabled={loading || !query.trim()}>
-          {loading ? <Loader2 size={18} className="spin" /> : 'Search'}
+        <button type="submit" className="btn btn-primary"
+          disabled={loading || !query.trim()}
+          style={{ borderRadius: 12, minWidth: 90 }}
+        >
+          {loading ? <Loader2 size={16} className="spin" /> : 'Buscar'}
         </button>
       </form>
 
       <AnimatePresence>
         {showFilters && (
-          <motion.div 
-            className="filters-grid-glass"
-            initial={{ opacity: 0, height: 0, marginTop: 0 }} 
-            animate={{ opacity: 1, height: 'auto', marginTop: 16 }} 
-            exit={{ opacity: 0, height: 0, marginTop: 0 }}
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            style={{ overflow: 'hidden' }}
           >
-            <div className="filter-group">
-              <p className="filter-label">Mode</p>
-              <div className="chip-row">
-                <button type="button" className={`chip-glass ${mode === 'ai' ? 'active' : ''}`} onClick={() => setMode('ai')}>
-                  <Sparkles size={13} /> AI
-                </button>
-                <button type="button" className={`chip-glass ${mode === 'classic' ? 'active' : ''}`} onClick={() => setMode('classic')}>
-                  Manual
-                </button>
-                <button type="button" className={`chip-glass ${deepSearch ? 'active' : ''}`} onClick={() => setDeepSearch(!deepSearch)}>
-                  <Zap size={13} /> Deep
-                </button>
+            <div className="search-filters">
+              <div className="filter-row">
+                <span className="filter-label">Modo</span>
+                <div className="chips-row">
+                  <button type="button" className={`chip${mode === 'ai' ? ' on' : ''}`} onClick={() => setMode('ai')}>
+                    <Sparkles size={11} /> AI
+                  </button>
+                  <button type="button" className={`chip${mode === 'classic' ? ' on' : ''}`} onClick={() => setMode('classic')}>
+                    Manual
+                  </button>
+                  <button type="button" className={`chip${deepSearch ? ' on' : ''}`} onClick={() => setDeepSearch(v => !v)}>
+                    <Zap size={11} /> Deep
+                  </button>
+                </div>
               </div>
-            </div>
-            
-            <div className="filter-group">
-              <p className="filter-label">Sort</p>
-              <div className="chip-row">
-                <button type="button" className={`chip-glass ${sortBy === 'relevance' ? 'active' : ''}`} onClick={() => setSortBy('relevance')}>
-                  Relevance
-                </button>
-                <button type="button" className={`chip-glass ${sortBy === 'chapters' ? 'active' : ''}`} onClick={() => setSortBy('chapters')}>
-                  Chapters
-                </button>
+
+              <div className="filter-row">
+                <span className="filter-label">Ordenar</span>
+                <div className="chips-row">
+                  <button type="button" className={`chip${sortBy === 'relevance' ? ' on' : ''}`} onClick={() => setSortBy('relevance')}>Relevância</button>
+                  <button type="button" className={`chip${sortBy === 'chapters' ? ' on' : ''}`} onClick={() => setSortBy('chapters')}>Capítulos</button>
+                </div>
               </div>
-            </div>
-            
-            <div className="filter-group">
-              <p className="filter-label">Providers</p>
-              <div className="chip-row">
-                {availableProviders.length === 0 ? (
-                  <span className="small-text" style={{ color: 'var(--text-muted)' }}>No providers available.</span>
-                ) : (
-                  availableProviders.map((provider) => (
-                    <button
-                      key={provider.id}
-                      type="button"
-                      className={`chip-glass ${selectedProviders.includes(provider.id) ? 'active' : ''}`}
-                      onClick={() => toggleProvider(provider.id)}
-                    >
-                      {provider.name}
-                    </button>
-                  ))
-                )}
-              </div>
+
+              {availableProviders.length > 0 && (
+                <div className="filter-row">
+                  <span className="filter-label">Provedores</span>
+                  <div className="chips-row">
+                    {availableProviders.map(p => (
+                      <button key={p.id} type="button"
+                        className={`chip${selectedProviders.includes(p.id) ? ' on' : ''}`}
+                        onClick={() => toggleProvider(p.id)}
+                      >
+                        {p.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </motion.div>
         )}

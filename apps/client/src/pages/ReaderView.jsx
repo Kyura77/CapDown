@@ -1,194 +1,278 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, LayoutList, Loader2, Maximize2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Maximize2, Minimize2, Settings } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { api } from '../api/client';
-
-function useReaderMode() {
-  useEffect(() => {
-    document.body.classList.add('reader-mode');
-    return () => document.body.classList.remove('reader-mode');
-  }, []);
-}
+import { useReaderStore } from '../stores/useReaderStore';
 
 export default function ReaderView() {
   const { mangaId, chapterId } = useParams();
   const navigate = useNavigate();
-  useReaderMode();
+  const { saveProgress, zoomLevel, brightness } = useReaderStore();
 
-  const [readerPayload, setReaderPayload] = useState(null);
-  const [loadError, setLoadError] = useState(false);
-  const [showHud, setShowHud] = useState(true);
-  const [wide, setWide] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [visibleCount, setVisibleCount] = useState(20);
+  const [payload, setPayload] = useState(null);
+  const [error, setError] = useState(null);
+  const [hud, setHud] = useState(true);
+  const [fullscreen, setFullscreen] = useState(false);
 
   const scrollRef = useRef(null);
-  const hudTimerRef = useRef(null);
-  const frameRef = useRef(null);
+  const hudTimer = useRef(null);
 
+  // Lock body overscroll for native feel
   useEffect(() => {
-    let cancelled = false;
-    api.getReaderChapter(mangaId, chapterId)
-      .then((res) => {
-        if (!cancelled) {
-          setVisibleCount(20);
-          setProgress(0);
-          if (scrollRef.current) {
-            scrollRef.current.scrollTop = 0;
-          }
-          setReaderPayload(res.data);
-          setLoadError(false);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setReaderPayload(null);
-          setLoadError(true);
-        }
-      });
-
+    document.body.style.overflow = 'hidden';
+    document.body.style.overscrollBehavior = 'none';
     return () => {
-      cancelled = true;
+      document.body.style.overflow = '';
+      document.body.style.overscrollBehavior = '';
     };
-  }, [chapterId, mangaId]);
-
-  useEffect(() => () => {
-    window.clearTimeout(hudTimerRef.current);
-    if (frameRef.current) {
-      window.cancelAnimationFrame(frameRef.current);
-    }
   }, []);
 
-  const chapter = readerPayload?.chapter ?? null;
-  const prevChapter = readerPayload?.prev_chapter ?? null;
-  const nextChapter = readerPayload?.next_chapter ?? null;
+  // Load chapter
+  useEffect(() => {
+    let alive = true;
+    setPayload(null);
+    setError(null);
+    api.getReaderChapter(mangaId, chapterId)
+      .then(r => { if (alive) setPayload(r.data); })
+      .catch(err => { if (alive) setError(err); });
+    return () => { alive = false; };
+  }, [mangaId, chapterId]);
+
+  // Save reading progress when payload is ready
+  useEffect(() => {
+    if (payload) {
+      saveProgress(mangaId, chapterId, 0);
+    }
+  }, [payload, mangaId, chapterId, saveProgress]);
+
+  // Keyboard nav
+  useEffect(() => {
+    const handler = e => {
+      if (e.key === 'Escape') navigate(-1);
+      if (e.key === 'ArrowLeft' && payload?.prev_chapter) navigate(`/reader/${mangaId}/${payload.prev_chapter.id}`);
+      if (e.key === 'ArrowRight' && payload?.next_chapter) navigate(`/reader/${mangaId}/${payload.next_chapter.id}`);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [navigate, mangaId, payload]);
+
+  const chapter = payload?.chapter ?? null;
   const pages = useMemo(() => {
-    if (!chapter || !readerPayload?.pages?.length) {
-      return [];
-    }
+    if (!chapter || !payload?.pages?.length) return [];
+    return payload.pages.map(p => api.getTelegramPageUrl(chapter.id, p.index));
+  }, [chapter, payload]);
 
-    return readerPayload.pages.map((page) => (
-      api.getTelegramPageUrl(chapter.id, page.index)
-    ));
-  }, [chapter, readerPayload]);
+  // React Virtual for performance
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const rowVirtualizer = useVirtualizer({
+    count: pages.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => window.innerWidth * 1.42, // Approx manga page ratio
+    overscan: 3,
+  });
 
-  const handleScroll = () => {
-    const node = scrollRef.current;
-    if (!node) {
-      return;
-    }
+  // HUD auto-hide on scroll
+  const handleScroll = useCallback(() => {
+    clearTimeout(hudTimer.current);
+    setHud(true);
+    hudTimer.current = setTimeout(() => setHud(false), 2800);
+  }, []);
 
-    if (frameRef.current) {
-      return;
-    }
+  const toggleHud = () => setHud(v => !v);
 
-    frameRef.current = window.requestAnimationFrame(() => {
-      const total = node.scrollHeight - node.clientHeight;
-      setProgress(total > 0 ? Math.round((node.scrollTop / total) * 100) : 0);
-
-      if (node.scrollTop + node.clientHeight >= node.scrollHeight - 1200 && visibleCount < pages.length) {
-        setVisibleCount((current) => Math.min(current + 20, pages.length));
-      }
-
-      frameRef.current = null;
-    });
-
-    window.clearTimeout(hudTimerRef.current);
-    setShowHud(true);
-    hudTimerRef.current = window.setTimeout(() => setShowHud(false), 2600);
+  // Navigation
+  const goToChapter = (ch) => {
+    if (!ch) return;
+    navigate(`/reader/${mangaId}/${ch.id}`);
+    scrollRef.current?.scrollTo({ top: 0, behavior: 'instant' });
   };
 
-  useEffect(() => {
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') {
-        navigate(-1);
-      }
-      if (event.key === 'ArrowLeft' && prevChapter) {
-        navigate(`/reader/${mangaId}/${prevChapter.id}`);
-      }
-      if (event.key === 'ArrowRight' && nextChapter) {
-        navigate(`/reader/${mangaId}/${nextChapter.id}`);
-      }
-      if (event.key.toLowerCase() === 'f') {
-        setWide((value) => !value);
-      }
-    };
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [mangaId, navigate, nextChapter, prevChapter]);
-
-  const isLoading = !loadError && !readerPayload;
-  if (isLoading) {
-    return (
-      <div className="reader-root" style={{ display: 'grid', placeItems: 'center' }}>
-        <p className="faint"><Loader2 size={16} className="spin" style={{ marginRight: 8 }} />Carregando capitulo...</p>
+  // --- Loading state ---
+  if (!payload && !error) return (
+    <div className="fixed inset-0 bg-[var(--color-background)] flex items-center justify-center">
+      <div className="flex flex-col items-center gap-3">
+        <Loader2 size={28} className="animate-spin text-brand-400" />
+        <p className="text-sm text-[var(--color-text-muted)]">Carregando capítulo...</p>
       </div>
-    );
-  }
+    </div>
+  );
 
-  if (!chapter || !readerPayload || loadError) {
-    return (
-      <div className="reader-root" style={{ display: 'grid', placeItems: 'center' }}>
-        <p className="faint">Capitulo nao encontrado.</p>
-      </div>
-    );
-  }
+  if (error) return (
+    <div className="fixed inset-0 bg-[var(--color-background)] flex flex-col items-center justify-center gap-4">
+      <span className="text-5xl">⚠️</span>
+      <p className="text-red-400 text-sm text-center px-8">Falha ao carregar capítulo.</p>
+      <button
+        className="mt-2 px-5 py-2.5 rounded-xl bg-[var(--color-surface)] text-sm text-white hover:bg-[var(--color-surface-hover)] transition-colors"
+        onClick={() => navigate(-1)}
+      >
+        Voltar
+      </button>
+    </div>
+  );
 
-  const visiblePages = pages.slice(0, visibleCount);
+  if (!chapter) return (
+    <div className="fixed inset-0 bg-[var(--color-background)] flex items-center justify-center">
+      <p className="text-[var(--color-text-muted)] text-sm">Capítulo não encontrado.</p>
+    </div>
+  );
 
   return (
-    <div className="reader-root" onClick={() => setShowHud((value) => !value)}>
-      <div className="reader-progress"><div style={{ width: `${progress}%` }} /></div>
-
+    <div
+      className="fixed inset-0 bg-black overflow-hidden"
+      style={{ filter: brightness !== 100 ? `brightness(${brightness / 100})` : undefined }}
+    >
+      {/* Top HUD */}
       <AnimatePresence>
-        {showHud && (
-          <motion.header
-            className="reader-hud"
-            initial={{ opacity: 0, y: -34 }}
+        {hud && (
+          <motion.div
+            className="absolute top-0 left-0 right-0 z-50 safe-pt"
+            initial={{ opacity: 0, y: -44 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -34 }}
-            onClick={(event) => event.stopPropagation()}
+            exit={{ opacity: 0, y: -44 }}
+            transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+            onClick={e => e.stopPropagation()}
           >
-            <button className="icon-btn" onClick={() => navigate(-1)} aria-label="Voltar">
-              <ChevronLeft size={22} />
-            </button>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <strong style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {readerPayload.manga_title}
-              </strong>
-              <span className="small-text">{chapter.title}</span>
+            <div className="glass-elevated flex items-center gap-3 px-4 py-3 mx-3 mt-3 rounded-2xl">
+              <button
+                onClick={() => navigate(-1)}
+                className="p-1.5 rounded-xl hover:bg-white/10 transition-colors"
+                aria-label="Voltar"
+              >
+                <ChevronLeft size={20} className="text-white" />
+              </button>
+
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-white truncate">{payload.manga_title}</p>
+                <p className="text-[10px] text-[var(--color-text-muted)] truncate">{chapter.title}</p>
+              </div>
+
+              <button
+                onClick={() => setFullscreen(v => !v)}
+                className="p-1.5 rounded-xl hover:bg-white/10 transition-colors"
+                aria-label="Fullscreen"
+              >
+                {fullscreen ? <Minimize2 size={17} className="text-white" /> : <Maximize2 size={17} className="text-white" />}
+              </button>
             </div>
-            <button className="icon-btn" onClick={() => setWide((value) => !value)} aria-label="Alternar largura">
-              {wide ? <LayoutList size={20} /> : <Maximize2 size={20} />}
-            </button>
-          </motion.header>
+          </motion.div>
         )}
       </AnimatePresence>
 
-      <div ref={scrollRef} className="reader-scroll" onScroll={handleScroll}>
-        {visiblePages.map((url, index) => (
-          <img
-            key={url}
-            src={url}
-            loading={index < 3 ? 'eager' : 'lazy'}
-            alt={`Pagina ${index + 1}`}
-            className={`reader-page-img${wide ? ' wide' : ''}`}
-          />
-        ))}
+      {/* Page scroll — Webtoon infinite vertical */}
+      <div
+        ref={scrollRef}
+        className="absolute inset-0 overflow-y-auto overscroll-none"
+        onScroll={handleScroll}
+        onClick={toggleHud}
+        style={{ scrollbarWidth: 'none' }}
+      >
+        <div
+          style={{
+            height: `${rowVirtualizer.getTotalSize()}px`,
+            width: '100%',
+            position: 'relative',
+          }}
+        >
+          {rowVirtualizer.getVirtualItems().map(virtualItem => (
+            <div
+              key={virtualItem.key}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: `${virtualItem.size}px`,
+                transform: `translateY(${virtualItem.start}px)`,
+              }}
+            >
+              <img
+                src={pages[virtualItem.index]}
+                alt={`Página ${virtualItem.index + 1}`}
+                className="w-full h-full object-contain"
+                style={{
+                  maxWidth: fullscreen ? '100%' : `${zoomLevel}%`,
+                  margin: '0 auto',
+                  display: 'block',
+                }}
+                loading={virtualItem.index < 3 ? 'eager' : 'lazy'}
+              />
+            </div>
+          ))}
+        </div>
 
+        {/* Chapter Navigation Footer (inside scroll at bottom) */}
         {pages.length > 0 && (
-          <div className="stat-strip" onClick={(event) => event.stopPropagation()} style={{ padding: '28px 16px 56px', justifyContent: 'center' }}>
-            <button className="btn" disabled={!prevChapter} onClick={() => prevChapter && navigate(`/reader/${mangaId}/${prevChapter.id}`)}>
-              Capitulo anterior
-            </button>
-            <button className="btn btn-primary" disabled={!nextChapter} onClick={() => nextChapter && navigate(`/reader/${mangaId}/${nextChapter.id}`)}>
-              Proximo capitulo
-            </button>
+          <div
+            className="flex items-center justify-between px-4 py-8 gap-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <motion.button
+              className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-sm font-semibold transition-colors ${payload.prev_chapter ? 'bg-[var(--color-surface)] text-white hover:bg-[var(--color-surface-hover)]' : 'bg-[var(--color-surface)]/40 text-[var(--color-text-muted)] cursor-not-allowed'}`}
+              whileTap={{ scale: payload.prev_chapter ? 0.96 : 1 }}
+              disabled={!payload.prev_chapter}
+              onClick={() => goToChapter(payload.prev_chapter)}
+            >
+              <ChevronLeft size={18} />
+              Anterior
+            </motion.button>
+
+            <motion.button
+              className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-sm font-semibold transition-colors ${payload.next_chapter ? 'bg-brand-500 text-white hover:bg-brand-400' : 'bg-[var(--color-surface)]/40 text-[var(--color-text-muted)] cursor-not-allowed'}`}
+              whileTap={{ scale: payload.next_chapter ? 0.96 : 1 }}
+              disabled={!payload.next_chapter}
+              onClick={() => goToChapter(payload.next_chapter)}
+            >
+              Próximo
+              <ChevronRight size={18} />
+            </motion.button>
           </div>
         )}
       </div>
+
+      {/* Bottom HUD (Progress) */}
+      <AnimatePresence>
+        {hud && (
+          <motion.div
+            className="absolute bottom-0 left-0 right-0 z-50 safe-pb"
+            initial={{ opacity: 0, y: 44 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 44 }}
+            transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="glass-elevated flex items-center gap-3 px-4 py-3 mx-3 mb-3 rounded-2xl">
+              {/* Prev/Next quick buttons */}
+              <button
+                disabled={!payload.prev_chapter}
+                onClick={() => goToChapter(payload.prev_chapter)}
+                className="p-1.5 rounded-xl hover:bg-white/10 transition-colors disabled:opacity-40"
+              >
+                <ChevronLeft size={20} className="text-white" />
+              </button>
+
+              {/* Chapter indicator */}
+              <div className="flex-1 text-center">
+                <p className="text-xs font-semibold text-brand-400">
+                  {chapter.number ? `Cap. ${chapter.number}` : chapter.title}
+                </p>
+                <p className="text-[10px] text-[var(--color-text-muted)]">
+                  {pages.length} páginas
+                </p>
+              </div>
+
+              <button
+                disabled={!payload.next_chapter}
+                onClick={() => goToChapter(payload.next_chapter)}
+                className="p-1.5 rounded-xl hover:bg-white/10 transition-colors disabled:opacity-40"
+              >
+                <ChevronRight size={20} className="text-white" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

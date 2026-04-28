@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { PreviewResponse, ProviderInfo, SearchResponse, UnifiedSearchResult } from "@capdown/contracts";
 import type { ProviderAdapter, ProviderSearchInput } from "./types.js";
 import { pickLocalizedText, toChapterLabel, toOptionalInteger, truncateText } from "./text.js";
+import { fetchWithTimeout } from "../utils/http.js";
 
 const MANGADEX_API_BASE = "https://api.mangadex.org";
 
@@ -137,6 +138,7 @@ export const mangaDexAdapter: ProviderAdapter = {
     id: "manga_dex",
     name: "MangaDex",
     domains: ["mangadex.org", "api.mangadex.org", "uploads.mangadex.org"],
+    status: "enabled",
   } satisfies ProviderInfo,
 
   canHandleUrl(url: URL) {
@@ -144,7 +146,7 @@ export const mangaDexAdapter: ProviderAdapter = {
   },
 
   async search(input: ProviderSearchInput): Promise<SearchResponse> {
-    const response = await fetch(buildMangaDexSearchUrl(input));
+    const response = await fetchWithTimeout(buildMangaDexSearchUrl(input).toString(), { timeoutMs: 10000 });
     if (!response.ok) {
       throw new Error(`MangaDex search failed with HTTP ${response.status}`);
     }
@@ -160,8 +162,8 @@ export const mangaDexAdapter: ProviderAdapter = {
     }
 
     const [mangaResponse, chapterResponse] = await Promise.all([
-      fetch(buildMangaDexMangaUrl(mangaId)),
-      fetch(buildMangaDexChapterListUrl(mangaId)),
+      fetchWithTimeout(buildMangaDexMangaUrl(mangaId).toString(), { timeoutMs: 10000 }),
+      fetchWithTimeout(buildMangaDexChapterListUrl(mangaId).toString(), { timeoutMs: 15000 }),
     ]);
 
     if (!mangaResponse.ok) {

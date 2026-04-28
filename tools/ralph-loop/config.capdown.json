@@ -1,0 +1,13 @@
+{
+  "projectRoot": ".",
+  "specPath": "AUDITORIA_CODIGO.md",
+  "planPath": "docs/plans/capdown-production.md",
+  "statePath": "tools/ralph-loop/state/current-run.json",
+  "logsDir": "tools/ralph-loop/logs",
+  "systemPromptPath": "tools/ralph-loop/prompts/system.md",
+  "iterationPromptPath": "tools/ralph-loop/prompts/iteration.md",
+  "agentPreset": "gemini",
+  "agentCommandTemplate": "",
+  "maxIterations": 30,
+  "dryRun": false
+}

@@ -1,346 +1,345 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Cloud, Database, Info, KeyRound, RefreshCw, Save, Send, Shield } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { api } from '../api/client';
-import { clearApiUrlOverride, getApiSourceLabel, readApiUrlOverride, resolveApiBaseUrl, writeApiUrlOverride } from '../api/runtime';
+import {
+  clearApiUrlOverride,
+  getApiSourceLabel,
+  readApiUrlOverride,
+  resolveApiBaseUrl,
+  writeApiUrlOverride,
+} from '../api/runtime';
 import { useProviderCatalog } from '../hooks/useProviderCatalog';
 import { useProviderSession } from '../hooks/useProviderSession';
 
+/* ── helpers ── */
 const ISSUE_LABELS = {
-  pages_missing: 'Páginas ausentes no banco',
+  pages_missing:    'Páginas ausentes no banco',
   telegram_missing: 'Páginas sem upload no Telegram',
 };
+const issueLabel    = issue => ISSUE_LABELS[issue] || issue || 'Problema desconhecido';
+const summarize     = reports =>
+  reports.reduce((acc, r) => { const k = issueLabel(r.issue); acc[k] = (acc[k] || 0) + 1; return acc; }, {});
+const apiErr        = (err, fb) => err?.response?.data?.error ?? err?.response?.data?.message ?? err?.message ?? fb;
 
-function issueLabel(issue) {
-  return ISSUE_LABELS[issue] || issue || 'Problema desconhecido';
+/* ── reusable sub-components ── */
+function Card({ icon: Icon, title, children }) {
+  return (
+    <div style={{
+      background: 'var(--surface)',
+      border: '1px solid var(--border)',
+      borderRadius: 'var(--r-lg)',
+      padding: '24px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 16,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 14, borderBottom: '1px solid var(--border)' }}>
+        <span style={{ fontWeight: 700, fontSize: 15 }}>{title}</span>
+        <Icon size={18} style={{ color: 'var(--green)' }} />
+      </div>
+      {children}
+    </div>
+  );
 }
 
-function summarizeIssues(reports) {
-  return reports.reduce((acc, report) => {
-    const key = issueLabel(report.issue);
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {});
+function Field({ label, ...props }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {label && <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>}
+      <input
+        {...props}
+        style={{
+          background: 'rgba(255,255,255,0.05)',
+          border: '1px solid var(--border2)',
+          borderRadius: 'var(--r-md)',
+          padding: '10px 14px',
+          color: 'var(--txt)',
+          fontSize: 14,
+          fontFamily: 'var(--font)',
+          outline: 'none',
+          width: '100%',
+          transition: 'border-color 0.15s',
+          ...props.style,
+        }}
+        onFocus={e => e.target.style.borderColor = 'var(--green)'}
+        onBlur={e => e.target.style.borderColor = 'var(--border2)'}
+      />
+    </div>
+  );
 }
 
-function extractApiError(error, fallback) {
-  const raw = error?.response?.data;
-  if (typeof raw === 'string' && raw.trim()) {
-    return raw;
-  }
-  if (typeof raw?.error === 'string' && raw.error.trim()) {
-    return raw.error;
-  }
-  if (typeof raw?.message === 'string' && raw.message.trim()) {
-    return raw.message;
-  }
-  if (typeof error?.message === 'string' && error.message.trim()) {
-    return error.message;
-  }
-  return fallback;
+function SelectField({ label, children, ...props }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {label && <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>}
+      <select
+        {...props}
+        style={{
+          background: 'rgba(255,255,255,0.05)',
+          border: '1px solid var(--border2)',
+          borderRadius: 'var(--r-md)',
+          padding: '10px 14px',
+          color: 'var(--txt)',
+          fontSize: 14,
+          fontFamily: 'var(--font)',
+          outline: 'none',
+          width: '100%',
+          cursor: 'pointer',
+        }}
+      >
+        {children}
+      </select>
+    </div>
+  );
 }
 
+function Row({ label, sub, right }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>{label}</div>
+        {sub && <div style={{ fontSize: 12, color: 'var(--txt3)', marginTop: 2 }}>{sub}</div>}
+      </div>
+      {right}
+    </div>
+  );
+}
+
+/* ── main component ── */
 export default function SettingsPage() {
   const { providers: availableProviders, loading: providersLoading } = useProviderCatalog();
-  const { connected: verdinhaConnected, checking: checkingVerdinha, refreshSession: refreshVerdinhaSession } = useProviderSession('verdinha');
+  const { connected: verdinhaConnected, checking: checkingVerdinha, refreshSession } = useProviderSession('verdinha');
 
-  const [apiUrl, setApiUrl] = useState(() => readApiUrlOverride());
+  const [apiUrl, setApiUrl]         = useState(() => readApiUrlOverride());
   const [concurrency, setConcurrency] = useState(() => parseInt(localStorage.getItem('capdown:concurrency') || '8', 10));
-  const [useAI, setUseAI] = useState(() => localStorage.getItem('capdown:use_ai') !== 'false');
-  const [integrityReport, setIntegrityReport] = useState(null);
-  const [loadingIntegrity, setLoadingIntegrity] = useState(false);
+  const [useAI, setUseAI]           = useState(() => localStorage.getItem('capdown:use_ai') !== 'false');
 
-  const [tgToken, setTgToken] = useState('');
-  const [tgChatId, setTgChatId] = useState('');
-  const [savingTg, setSavingTg] = useState(false);
+  const [tgToken, setTgToken]       = useState('');
+  const [tgChatId, setTgChatId]     = useState('');
+  const [tgConnected, setTgConnected] = useState(false);
+  const [savingTg, setSavingTg]     = useState(false);
 
   const [providerId, setProviderId] = useState('');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [savingAccount, setSavingAccount] = useState(false);
-  const [solvingVerdinha, setSolvingVerdinha] = useState(false);
+  const [username, setUsername]     = useState('');
+  const [password, setPassword]     = useState('');
+  const [savingAcc, setSavingAcc]   = useState(false);
+  const [solvingVip, setSolvingVip] = useState(false);
 
-  const apiConfig = useMemo(() => resolveApiBaseUrl(), []);
+  const [report, setReport]         = useState(null);
+  const [checking, setChecking]     = useState(false);
+
+  const apiConfig      = useMemo(() => resolveApiBaseUrl(), []);
+  const apiSourceLabel = getApiSourceLabel(apiConfig.source);
 
   useEffect(() => {
-    api.getSettings()
-      .then((res) => {
-        setTgToken(res.data.telegram_token || '');
-        setTgChatId(res.data.telegram_chat_id || '');
-      })
-      .catch(console.error);
+    api.getSettings().then(r => {
+      // API now returns has_telegram_token (boolean) instead of raw token
+      setTgConnected(r.data.has_telegram_token ?? false);
+      setTgChatId(r.data.telegram_chat_id || '');
+    }).catch(console.error);
   }, []);
 
-  const handleSaveGeneral = async () => {
-    const previousApiUrl = readApiUrlOverride();
-    const nextApiUrl = apiUrl.trim();
-
-    writeApiUrlOverride(nextApiUrl);
+  const saveGeneral = async () => {
+    const prev = readApiUrlOverride();
+    const next = apiUrl.trim();
+    writeApiUrlOverride(next);
     localStorage.setItem('capdown:concurrency', concurrency.toString());
     localStorage.setItem('capdown:use_ai', useAI.toString());
-
-    if (previousApiUrl !== nextApiUrl) {
-      alert('Configurações salvas. A API foi alterada, a interface será recarregada.');
-      window.location.reload();
-      return;
-    }
-
-    alert('Configurações locais salvas.');
+    if (prev !== next) { alert('Configurações salvas. Recarregando...'); window.location.reload(); return; }
+    alert('Configurações salvas.');
   };
 
-  const handleResetApiUrl = () => {
-    clearApiUrlOverride();
-    setApiUrl('');
-    window.location.reload();
-  };
-
-  const handleSaveTelegram = async () => {
+  const saveTelegram = async () => {
     setSavingTg(true);
     try {
-      await api.saveSettings({
-        telegram_token: tgToken,
-        telegram_chat_id: tgChatId,
-      });
-      alert('Configurações do Telegram salvas.');
-    } catch {
-      alert('Falha ao salvar configurações do Telegram.');
-    } finally {
-      setSavingTg(false);
+      await api.saveSettings({ telegram_token: tgToken, telegram_chat_id: tgChatId });
+      setTgConnected(true);
+      setTgToken(''); // clear the field after saving — don't keep in memory
+      alert('Telegram salvo.');
     }
+    catch { alert('Falha ao salvar Telegram.'); }
+    finally { setSavingTg(false); }
   };
 
-  const handleSaveAccount = async () => {
-    const normalizedUsername = username.trim();
-    const normalizedPassword = password.trim();
-
-    if (!providerId) {
-      alert('Selecione um provedor antes de salvar a credencial.');
-      return;
-    }
-
-    if (!normalizedUsername || !normalizedPassword) {
-      return;
-    }
-
-    setSavingAccount(true);
+  const saveAccount = async () => {
+    if (!providerId || !username.trim() || !password.trim()) { alert('Preencha todos os campos.'); return; }
+    setSavingAcc(true);
     try {
-      await api.saveAccount({
-        provider_id: providerId,
-        username: normalizedUsername,
-        password: normalizedPassword,
-      });
-      setUsername('');
-      setPassword('');
-      alert('Credencial salva no Windows Keyring.');
-    } catch (error) {
-      alert(`Falha ao salvar credencial: ${extractApiError(error, 'erro desconhecido')}`);
-    } finally {
-      setSavingAccount(false);
-    }
+      await api.saveAccount({ provider_id: providerId, username: username.trim(), password: password.trim() });
+      setUsername(''); setPassword('');
+      alert('Credencial salva no cofre.');
+    } catch (err) { alert(`Falha: ${apiErr(err, 'erro desconhecido')}`); }
+    finally { setSavingAcc(false); }
   };
 
-  const runIntegrityCheck = async () => {
-    setLoadingIntegrity(true);
+  const solveVip = async () => {
+    setSolvingVip(true);
     try {
-      const res = await api.verifyLibrary();
-      setIntegrityReport(res.data.reports);
-    } catch {
-      alert('Falha na verificação de integridade.');
-    } finally {
-      setLoadingIntegrity(false);
-    }
+      await api.solveAuth({ provider_id: 'verdinha', url: 'https://verdinha.wtf/', wait_seconds: 120 });
+      await refreshSession();
+      alert('Sessão VIP capturada!');
+    } catch { alert('Falha ao capturar sessão VIP.'); }
+    finally { setSolvingVip(false); }
   };
 
-  const handleSolveVerdinha = async () => {
-    setSolvingVerdinha(true);
-    try {
-      await api.solveAuth({
-        provider_id: 'verdinha',
-        url: 'https://verdinha.wtf/',
-        wait_seconds: 120,
-      });
-      await refreshVerdinhaSession();
-      alert('Sessão VIP da Verdinha capturada.');
-    } catch {
-      alert('Falha ao capturar a sessão VIP da Verdinha.');
-    } finally {
-      setSolvingVerdinha(false);
-    }
+  const runIntegrity = async () => {
+    setChecking(true);
+    try { const r = await api.verifyLibrary(); setReport(r.data.reports); }
+    catch { alert('Falha na verificação.'); }
+    finally { setChecking(false); }
   };
-
-  const apiSourceLabel = getApiSourceLabel(apiConfig.source);
-  const providerSelectDisabled = providersLoading || availableProviders.length === 0;
 
   return (
-    <main className="page">
-      <section className="hero-panel" style={{ minHeight: 260 }}>
-        <div>
-          <span className="eyebrow">Control room</span>
-          <h1 className="page-title">Ajustes do cofre.</h1>
-          <p className="page-subtitle">Credenciais, armazenamento na nuvem, Telegram e integridade em um só lugar.</p>
-        </div>
-      </section>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+      {/* Header */}
+      <div className="hero">
+        <div className="hero-eyebrow">Control Room</div>
+        <h1 className="hero-title" style={{ fontSize: 36 }}>Ajustes do cofre.</h1>
+        <p className="hero-sub" style={{ marginBottom: 0 }}>Credenciais, Telegram e integridade em um só lugar.</p>
+      </div>
 
-      <section className="settings-grid" style={{ marginTop: 20 }}>
-        <article className="settings-panel">
-          <div className="panel-title">
-            <span>Integração Telegram</span>
-            <Send size={20} color="var(--acid)" />
-          </div>
-          <p className="small-text" style={{ marginBottom: 8 }}>
-            O CapDown opera em modo <strong>Telegram-first</strong>. Todo o conteúdo é enviado diretamente para a nuvem.
+      {/* Grid of cards */}
+      <div className="section" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 20 }}>
+
+        {/* Telegram */}
+        <Card icon={Send} title="Integração Telegram">
+          <Row
+            label="Status do Telegram"
+            sub={tgConnected ? 'Bot token configurado e salvo.' : 'Sem token configurado.'}
+            right={
+              <span style={{ fontSize: 12, fontWeight: 700, color: tgConnected ? '#4ade80' : 'var(--txt3)' }}>
+                {tgConnected ? '● Ativo' : '○ Inativo'}
+              </span>
+            }
+          />
+          <p style={{ fontSize: 13, color: 'var(--txt3)', lineHeight: 1.5 }}>
+            Informe o token para configurar ou atualizar. Ele <strong style={{ color: 'var(--txt2)' }}>não</strong> é exibido após salvo.
           </p>
-          <input className="field" type="password" value={tgToken} onChange={(event) => setTgToken(event.target.value)} placeholder="Bot token" />
-          <input className="field" value={tgChatId} onChange={(event) => setTgChatId(event.target.value)} placeholder="Chat ou channel ID" />
-          <button className="btn btn-primary" onClick={handleSaveTelegram} disabled={savingTg}>
-            {savingTg ? <RefreshCw className="spin" size={18} /> : <Save size={18} />}
+          <Field label="Novo Bot Token" type="password" value={tgToken} onChange={e => setTgToken(e.target.value)} placeholder="1234567890:ABC..." />
+          <Field label="Chat ou Channel ID" value={tgChatId} onChange={e => setTgChatId(e.target.value)} placeholder="-100..." />
+          <button className="btn btn-primary" onClick={saveTelegram} disabled={savingTg}>
+            {savingTg ? <RefreshCw size={14} className="spin" /> : <Save size={14} />}
             Salvar Telegram
           </button>
-        </article>
+        </Card>
 
-        <article className="settings-panel">
-          <div className="panel-title">
-            <span>Conexão e App</span>
-            <Cloud size={20} color="var(--acid)" />
-          </div>
-          <input
-            className="field"
+        {/* Conexão */}
+        <Card icon={Cloud} title="Conexão e App">
+          <Field
+            label="Override da API"
             value={apiUrl}
-            onChange={(event) => setApiUrl(event.target.value)}
-            placeholder="Override opcional da API, ex: http://127.0.0.1:4540"
+            onChange={e => setApiUrl(e.target.value)}
+            placeholder="http://127.0.0.1:4540"
           />
-          <p className="small-text" style={{ marginTop: 8 }}>
-            API ativa: <strong>{apiConfig.baseUrl}</strong> ({apiSourceLabel})
-          </p>
-          {apiConfig.overrideUrl && (
-            <p className="small-text" style={{ marginTop: 4 }}>
-              Override local em uso. Limpe para voltar ao padrão do ambiente.
-            </p>
-          )}
-          <label>
-            <span className="small-text">Concorrência de download: {concurrency}</span>
-            <input
-              type="range"
-              min="1"
-              max="16"
-              value={concurrency}
-              onChange={(event) => setConcurrency(parseInt(event.target.value, 10))}
-              style={{ width: '100%', accentColor: 'var(--acid)' }}
+          <div style={{ fontSize: 12, color: 'var(--txt3)' }}>
+            API ativa: <strong style={{ color: 'var(--txt2)' }}>{apiConfig.baseUrl}</strong> ({apiSourceLabel})
+          </div>
+
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8 }}>
+              <span style={{ color: 'var(--txt2)', fontWeight: 600 }}>Concorrência</span>
+              <span style={{ color: 'var(--green)', fontWeight: 700 }}>{concurrency}</span>
+            </div>
+            <input type="range" min="1" max="16" value={concurrency}
+              onChange={e => setConcurrency(parseInt(e.target.value, 10))}
+              style={{ width: '100%', accentColor: 'var(--green)', cursor: 'pointer' }}
             />
-          </label>
-          <label className="toggle-row">
-            <span>
-              <strong>Busca com IA</strong>
-              <p className="small-text">Expande termos quando o serviço local estiver disponível.</p>
-            </span>
-            <input type="checkbox" checked={useAI} onChange={(event) => setUseAI(event.target.checked)} />
-          </label>
-          <div className="chip-row" style={{ marginTop: 12 }}>
-            <button className="btn btn-primary" onClick={handleSaveGeneral}>Salvar Preferências</button>
-            <button className="btn" onClick={handleResetApiUrl} disabled={!apiConfig.overrideUrl}>Restaurar padrão</button>
           </div>
-        </article>
 
-        <article className="settings-panel">
-          <div className="panel-title">
-            <span>Credenciais</span>
-            <Shield size={20} color="var(--ok)" />
+          <Row
+            label="Busca com IA"
+            sub="Expande termos quando o serviço local estiver disponível."
+            right={
+              <div
+                onClick={() => setUseAI(v => !v)}
+                style={{
+                  width: 44, height: 24, borderRadius: 99,
+                  background: useAI ? 'var(--green)' : 'var(--border2)',
+                  cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0,
+                }}
+              >
+                <div style={{
+                  position: 'absolute', top: 3, left: useAI ? 22 : 3,
+                  width: 18, height: 18, borderRadius: '50%',
+                  background: useAI ? '#000' : 'var(--txt3)',
+                  transition: 'left 0.2s',
+                }} />
+              </div>
+            }
+          />
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-primary" onClick={saveGeneral}>Salvar Preferências</button>
+            <button className="btn" onClick={() => { clearApiUrlOverride(); setApiUrl(''); window.location.reload(); }}
+              disabled={!apiConfig.overrideUrl}>
+              Restaurar padrão
+            </button>
           </div>
-          <div className="toggle-row">
-            <span>
-              <strong>Verdinha VIP</strong>
-              <p className="small-text">Status: {checkingVerdinha ? 'verificando' : verdinhaConnected ? 'conectado' : 'desconectado'}</p>
-            </span>
-            <KeyRound size={22} color={verdinhaConnected ? 'var(--ok)' : 'var(--faint)'} />
-          </div>
-          <button className="btn" onClick={handleSolveVerdinha} disabled={solvingVerdinha}>
-            {solvingVerdinha ? <RefreshCw className="spin" size={18} /> : <KeyRound size={18} />}
-            {solvingVerdinha ? 'Aguardando login' : 'Conectar Verdinha VIP'}
-          </button>
-          <select className="select-field" value={providerId} onChange={(event) => setProviderId(event.target.value)} disabled={providerSelectDisabled}>
+        </Card>
+
+        {/* Credenciais */}
+        <Card icon={Shield} title="Credenciais">
+          <Row
+            label="Verdinha VIP"
+            sub={`Status: ${checkingVerdinha ? 'verificando...' : verdinhaConnected ? 'conectado ✓' : 'desconectado'}`}
+            right={
+              <button className="btn" onClick={solveVip} disabled={solvingVip}>
+                {solvingVip ? <RefreshCw size={13} className="spin" /> : <KeyRound size={13} />}
+                {solvingVip ? 'Aguardando' : 'Conectar VIP'}
+              </button>
+            }
+          />
+
+          <div style={{ height: 1, background: 'var(--border)' }} />
+
+          <SelectField label="Provedor" value={providerId} onChange={e => setProviderId(e.target.value)} disabled={providersLoading || !availableProviders.length}>
             <option value="">Selecione um provedor</option>
-            {availableProviders.map((provider) => (
-              <option key={provider.id} value={provider.id}>
-                {provider.name}
-              </option>
-            ))}
-          </select>
-          <p className="small-text" style={{ marginTop: 6 }}>
-            {providersLoading
-              ? 'Carregando catálogo de provedores...'
-              : availableProviders.length === 0
-                ? 'Nenhum provedor retornado pela API.'
-                : 'O catálogo vem da API e não é mais fixo no cliente.'}
-          </p>
-          <input className="field" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="Usuário" />
-          <input className="field" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Senha" />
-          <button className="btn" onClick={handleSaveAccount} disabled={savingAccount || providerSelectDisabled}>
-            {savingAccount ? 'Salvando' : 'Adicionar ao cofre'}
+            {availableProviders.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </SelectField>
+          <Field label="Usuário" value={username} onChange={e => setUsername(e.target.value)} placeholder="usuário" />
+          <Field label="Senha" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••" />
+          <button className="btn" onClick={saveAccount} disabled={savingAcc || !providerId}>
+            {savingAcc ? <RefreshCw size={13} className="spin" /> : null}
+            Adicionar ao cofre
           </button>
-        </article>
+        </Card>
 
-        <article className="settings-panel">
-          <div className="panel-title">
-            <span>Sistema</span>
-            <Info size={20} color="var(--acid)" />
-          </div>
-          <div className="toggle-row"><span>Armazenamento</span><strong>Nuvem (Telegram)</strong></div>
-          <div className="toggle-row"><span>Banco legado</span><strong>Transitório</strong></div>
-          <p className="small-text">
-            A integridade valida os IDs virtuais e a persistência dos arquivos no Telegram.
+        {/* Sistema */}
+        <Card icon={Info} title="Sistema">
+          <Row label="Armazenamento" right={<span style={{ fontSize: 13, color: 'var(--txt2)', fontWeight: 600 }}>Nuvem (Telegram)</span>} />
+          <Row label="Banco legado" right={<span style={{ fontSize: 13, color: 'var(--txt2)', fontWeight: 600 }}>Transitório</span>} />
+          <p style={{ fontSize: 12, color: 'var(--txt3)', lineHeight: 1.5 }}>
+            A integridade valida IDs virtuais e a persistência dos arquivos no Telegram.
           </p>
-          <button className="btn" onClick={runIntegrityCheck} disabled={loadingIntegrity}>
-            {loadingIntegrity ? <RefreshCw className="spin" size={18} /> : <Database size={18} />}
+          <button className="btn" onClick={runIntegrity} disabled={checking}>
+            {checking ? <RefreshCw size={13} className="spin" /> : <Database size={13} />}
             Verificar integridade
           </button>
-          {integrityReport && (
-            <div className={`integrity-report ${integrityReport.length === 0 ? 'ok' : 'warn'}`}>
-              <strong>
-                {integrityReport.length === 0 ? 'Nenhum problema encontrado.' : `${integrityReport.length} problema(s) encontrados.`}
+
+          {report && (
+            <div style={{
+              padding: '14px 16px',
+              background: report.length === 0 ? 'rgba(74,222,128,0.08)' : 'var(--red-dim)',
+              border: `1px solid ${report.length === 0 ? 'rgba(74,222,128,0.2)' : 'rgba(248,113,113,0.2)'}`,
+              borderRadius: 'var(--r-md)',
+              fontSize: 13,
+            }}>
+              <strong style={{ color: report.length === 0 ? '#4ade80' : 'var(--red)' }}>
+                {report.length === 0 ? '✓ Nenhum problema encontrado.' : `⚠ ${report.length} problema(s) encontrado(s).`}
               </strong>
-              {integrityReport.length > 0 && (
-                <>
-                  <div className="integrity-summary">
-                    {Object.entries(summarizeIssues(integrityReport)).map(([label, count]) => (
-                      <span key={label}>{count}x {label}</span>
-                    ))}
-                  </div>
-                  <div className="integrity-list" aria-label="Problemas de integridade encontrados">
-                    {integrityReport.map((item, index) => (
-                      <article className="integrity-item" key={`${item.chapter_id || index}-${item.issue || 'issue'}`}>
-                        <div>
-                          <span className="integrity-issue">{issueLabel(item.issue)}</span>
-                          <strong>{item.manga_title || 'Manga sem título'}</strong>
-                          <p>{item.chapter_title || item.chapter_id || 'Capítulo sem identificação'}</p>
-                        </div>
-                        <dl>
-                          {item.chapter_id && (
-                            <>
-                              <dt>ID</dt>
-                              <dd>{item.chapter_id}</dd>
-                            </>
-                          )}
-                          {item.expected_pages !== undefined && (
-                            <>
-                              <dt>Páginas esperadas</dt>
-                              <dd>{item.expected_pages}</dd>
-                            </>
-                          )}
-                          {item.telegram_pages !== undefined && (
-                            <>
-                              <dt>Telegram</dt>
-                              <dd>{item.telegram_pages}</dd>
-                            </>
-                          )}
-                        </dl>
-                      </article>
-                    ))}
-                  </div>
-                </>
+              {report.length > 0 && (
+                <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {Object.entries(summarize(report)).map(([label, count]) => (
+                    <div key={label} style={{ color: 'var(--txt2)' }}>{count}× {label}</div>
+                  ))}
+                </div>
               )}
             </div>
           )}
-        </article>
-      </section>
-    </main>
+        </Card>
+
+      </div>
+    </motion.div>
   );
 }

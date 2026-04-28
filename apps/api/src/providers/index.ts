@@ -1,16 +1,32 @@
 import type { ProviderId, ProviderInfo } from "@capdown/contracts";
 import { mangaDexAdapter } from "./mangadex.js";
 import { verdinhaAdapter } from "./verdinha.js";
+import { egoToonsAdapter } from "./egotoons.js";
 import type { ProviderAdapter } from "./types.js";
 
-const providerAdapters: ProviderAdapter[] = [verdinhaAdapter, mangaDexAdapter];
+const providerAdapters: ProviderAdapter[] = [verdinhaAdapter, mangaDexAdapter, egoToonsAdapter];
 
 const adaptersById = new Map<ProviderId, ProviderAdapter>(
   providerAdapters.map((adapter) => [adapter.info.id, adapter]),
 );
 
+import { providerIdSchema } from "@capdown/contracts";
+
 export function getSupportedProviderCatalog(): ProviderInfo[] {
-  return providerAdapters.map((adapter) => adapter.info);
+  // Return all known providers. If they have an adapter, use its info (status: enabled).
+  // Otherwise, return a stub with status: unavailable.
+  return providerIdSchema.options.map((id) => {
+    const adapter = adaptersById.get(id);
+    if (adapter) {
+      return adapter.info;
+    }
+    return {
+      id,
+      name: id.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
+      domains: [],
+      status: "unavailable",
+    };
+  });
 }
 
 export function getSupportedProviderIds(): ProviderId[] {
