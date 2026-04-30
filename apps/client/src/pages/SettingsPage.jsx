@@ -120,6 +120,9 @@ export default function SettingsPage() {
   const [tgConnected, setTgConnected] = useState(false);
   const [savingTg, setSavingTg]     = useState(false);
 
+  const [enabledProviders, setEnabledProviders] = useState([]);
+  const [savingProviders, setSavingProviders]   = useState(false);
+
   const [providerId, setProviderId] = useState('');
   const [username, setUsername]     = useState('');
   const [password, setPassword]     = useState('');
@@ -137,6 +140,7 @@ export default function SettingsPage() {
       // API now returns has_telegram_token (boolean) instead of raw token
       setTgConnected(r.data.has_telegram_token ?? false);
       setTgChatId(r.data.telegram_chat_id || '');
+      setEnabledProviders(r.data.enabled_providers || []);
     }).catch(console.error);
   }, []);
 
@@ -146,6 +150,17 @@ export default function SettingsPage() {
     writeApiUrlOverride(next);
     localStorage.setItem('capdown:concurrency', concurrency.toString());
     localStorage.setItem('capdown:use_ai', useAI.toString());
+    
+    // Save enabled providers to API
+    setSavingProviders(true);
+    try {
+      await api.saveSettings({ enabled_providers: enabledProviders });
+    } catch {
+      alert('Falha ao salvar provedores ativos.');
+    } finally {
+      setSavingProviders(false);
+    }
+
     if (prev !== next) { alert('Configurações salvas. Recarregando...'); window.location.reload(); return; }
     alert('Configurações salvas.');
   };
@@ -302,6 +317,45 @@ export default function SettingsPage() {
           <button className="btn" onClick={saveAccount} disabled={savingAcc || !providerId}>
             {savingAcc ? <RefreshCw size={13} className="spin" /> : null}
             Adicionar ao cofre
+          </button>
+        </Card>
+
+        {/* Provedores Ativos */}
+        <Card icon={Sparkles} title="Provedores Ativos">
+          <p style={{ fontSize: 13, color: 'var(--txt3)', lineHeight: 1.5 }}>
+            Selecione quais fontes aparecerão na busca.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {availableProviders.filter(p => p.status === 'enabled').map(p => (
+              <Row
+                key={p.id}
+                label={p.name}
+                sub={p.domains?.[0]}
+                right={
+                  <div
+                    onClick={() => setEnabledProviders(prev => 
+                      prev.includes(p.id) ? prev.filter(x => x !== p.id) : [...prev, p.id]
+                    )}
+                    style={{
+                      width: 44, height: 24, borderRadius: 99,
+                      background: enabledProviders.includes(p.id) ? 'var(--green)' : 'var(--border2)',
+                      cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0,
+                    }}
+                  >
+                    <div style={{
+                      position: 'absolute', top: 3, left: enabledProviders.includes(p.id) ? 22 : 3,
+                      width: 18, height: 18, borderRadius: '50%',
+                      background: enabledProviders.includes(p.id) ? '#000' : 'var(--txt3)',
+                      transition: 'left 0.2s',
+                    }} />
+                  </div>
+                }
+              />
+            ))}
+          </div>
+          <button className="btn btn-primary" onClick={saveGeneral} disabled={savingProviders}>
+            {savingProviders ? <RefreshCw size={14} className="spin" /> : <Save size={14} />}
+            Salvar Provedores
           </button>
         </Card>
 

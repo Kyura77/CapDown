@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { BookOpen, Download, Loader2, Search, SlidersHorizontal, Sparkles, X, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
@@ -172,6 +172,13 @@ export default function Dashboard() {
   const [selection, setSelection] = useState(null);
   const [selLoading, setSelLoading] = useState(false);
   const [filter, setFilter] = useState('all');
+  const [globalEnabledProviders, setGlobalEnabledProviders] = useState([]);
+
+  useEffect(() => {
+    api.getSettings().then(r => {
+      setGlobalEnabledProviders(r.data.enabled_providers || []);
+    }).catch(console.error);
+  }, []);
 
   const mangaList = useMemo(() => library?.manga ?? [], [library]);
   const activeJobs = useMemo(() => (downloads ?? []).filter(j => ['queued', 'downloading', 'failed'].includes(j.status)), [downloads]);
@@ -179,6 +186,12 @@ export default function Dashboard() {
     filter === 'all' ? mangaList : mangaList.filter(m => (m.media_type ?? 'manga') === filter),
     [mangaList, filter]
   );
+
+  const filteredProviders = useMemo(() => {
+    const enabled = availableProviders.filter(p => p.status === 'enabled');
+    if (globalEnabledProviders.length === 0) return enabled;
+    return enabled.filter(p => globalEnabledProviders.includes(p.id));
+  }, [availableProviders, globalEnabledProviders]);
 
   const toggleProvider = id => setProviders(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
 
@@ -325,14 +338,14 @@ export default function Dashboard() {
               <Zap size={11} />
               Busca profunda
             </button>
-            {availableProviders.length > 0 && (
+            {filteredProviders.length > 0 && (
               <button
                 type="button"
                 onClick={() => setShowFilters(v => !v)}
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-[var(--color-surface)] text-[var(--color-text-muted)] border border-[var(--color-surface-border)] transition-colors ml-auto"
               >
                 <SlidersHorizontal size={11} />
-                Fontes
+                Fontes {selectedProviders.length > 0 && `(${selectedProviders.length})`}
               </button>
             )}
           </div>
@@ -347,12 +360,12 @@ export default function Dashboard() {
                 className="overflow-hidden"
               >
                 <div className="flex flex-wrap gap-2 pt-3">
-                  {availableProviders.filter(p => p.status === 'enabled').map(p => (
+                  {filteredProviders.map(p => (
                     <button
                       key={p.id}
                       type="button"
                       onClick={() => toggleProvider(p.id)}
-                      className={`text-xs px-3 py-1.5 rounded-full transition-colors ${selectedProviders.includes(p.id) ? 'bg-brand-500 text-white' : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] border border-[var(--color-surface-border)]'}`}
+                      className={`text-xs px-3 py-1.5 rounded-full transition-colors ${selectedProviders.includes(p.id) ? 'bg-brand-500 text-white border-brand-500' : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] border border-[var(--color-surface-border)]'}`}
                     >
                       {p.name}
                     </button>

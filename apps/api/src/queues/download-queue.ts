@@ -1,6 +1,7 @@
 import { Queue, Worker, type Job } from 'bullmq';
 import type { IDownloadsRepository, ISettingsRepository, ILibraryRepository } from '../repositories/interfaces.js';
 import { DownloadWorker, type DownloadPlan } from '../services/download-worker.js';
+import { logger } from '../utils/logger.js';
 
 const QUEUE_NAME = 'capdown:downloads';
 
@@ -48,14 +49,14 @@ export class DownloadQueue {
         },
       );
 
-      this.worker.on('completed', (job) => console.log(`[queue] Job ${job.id} done`));
+      this.worker.on('completed', (job) => logger.info(`[queue] Job ${job.id} done`));
       this.worker.on('failed', (job, err) =>
-        console.error(`[queue] Job ${job?.id} failed:`, err.message),
+        logger.error(`[queue] Job ${job?.id} failed:`, err.message),
       );
 
-      console.log('[queue] BullMQ started (Redis mode)');
+      logger.info('[queue] BullMQ started (Redis mode)');
     } catch {
-      console.warn('[queue] Redis unavailable — falling back to in-process mode');
+      logger.warn('[queue] Redis unavailable — falling back to in-process mode');
       this.queue = null;
     }
   }
@@ -69,7 +70,7 @@ export class DownloadQueue {
       });
     } else {
       void this.inProcess.processJob(plan.jobId, plan).catch((err) =>
-        console.error(`[queue] In-process job ${plan.jobId} failed:`, err),
+        logger.error(`[queue] In-process job ${plan.jobId} failed:`, err),
       );
     }
   }

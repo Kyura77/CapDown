@@ -20,6 +20,9 @@ export class PrismaSettingsRepository implements ISettingsRepository {
       telegram_chat_id: settings.telegram_chat_id
         ? (isEncrypted(settings.telegram_chat_id) ? decrypt(settings.telegram_chat_id) : settings.telegram_chat_id)
         : null,
+      enabled_providers: settings.enabled_providers_json
+        ? JSON.parse(settings.enabled_providers_json)
+        : undefined,
       updated_at: settings.updated_at.toISOString(),
     };
   }
@@ -30,6 +33,9 @@ export class PrismaSettingsRepository implements ISettingsRepository {
       data: {
         telegram_token: settings.telegram_token ? encrypt(settings.telegram_token) : undefined,
         telegram_chat_id: settings.telegram_chat_id ? encrypt(settings.telegram_chat_id) : undefined,
+        enabled_providers_json: settings.enabled_providers
+          ? JSON.stringify(settings.enabled_providers)
+          : undefined,
       }
     });
 
@@ -40,6 +46,9 @@ export class PrismaSettingsRepository implements ISettingsRepository {
       telegram_chat_id: updated.telegram_chat_id
         ? (isEncrypted(updated.telegram_chat_id) ? decrypt(updated.telegram_chat_id) : updated.telegram_chat_id)
         : null,
+      enabled_providers: updated.enabled_providers_json
+        ? JSON.parse(updated.enabled_providers_json)
+        : undefined,
       updated_at: updated.updated_at.toISOString(),
     };
   }

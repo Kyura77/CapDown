@@ -12,6 +12,7 @@ import {
 import { type ILibraryRepository } from "./interfaces.js";
 import { AppError } from "../store/errors.js";
 import { telegramBot } from "../services/telegram-bot.js";
+import { logger } from '../utils/logger.js';
 
 export class PrismaLibraryRepository implements ILibraryRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -325,7 +326,7 @@ export class PrismaLibraryRepository implements ILibraryRepository {
           body: Buffer.from(arrayBuffer),
         };
       } catch (err) {
-        console.error(`Failed to load telegram file ${page.telegram_file_id}:`, err);
+        logger.error(`Failed to load telegram file ${page.telegram_file_id}:`, err);
         // Fallback to SVG error
       }
     }

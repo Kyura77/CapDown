@@ -8,10 +8,11 @@ generator client {
 }
 
 model Settings {
-  id               String   @id @default("default")
-  telegram_token   String?
-  telegram_chat_id String?
-  updated_at       DateTime @updatedAt
+  id                    String   @id @default("default")
+  telegram_token        String?
+  telegram_chat_id      String?
+  enabled_providers_json String? // Store as JSON string array
+  updated_at            DateTime @updatedAt
 }
 
 model AuthSession {

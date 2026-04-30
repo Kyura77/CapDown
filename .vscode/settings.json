@@ -1,0 +1,18 @@
+{
+  "java.import.excludes": [
+    "**/android/**",
+    "**/node_modules/**",
+    "**/frontend/**"
+  ],
+  "java.project.importOnFirstTimeStartup": "disabled",
+  "java.project.importHint": false,
+  "files.exclude": {
+    "**/frontend": true,
+    "**/legacy": true
+  },
+  "files.watcherExclude": {
+    "**/android/**": true,
+    "**/frontend/**": true,
+    "**/node_modules/**": true
+  }
+}

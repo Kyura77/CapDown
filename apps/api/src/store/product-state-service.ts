@@ -16,6 +16,7 @@ import type { IAuthRepository, IDownloadsRepository, ILibraryRepository, ISettin
 import { previewProviderSource } from "../services/providers.js";
 import type { DownloadPlan } from "../services/download-worker.js";
 import { DownloadQueue } from "../queues/download-queue.js";
+import { logger } from '../utils/logger.js';
 
 type InternalDownloadPlan = DownloadPlan & {
   knownSource: boolean;
@@ -90,6 +91,7 @@ export class ProductStateService {
     return {
       telegram_token: settings.telegram_token ?? "",
       telegram_chat_id: settings.telegram_chat_id ?? "",
+      enabled_providers: settings.enabled_providers ?? [],
     };
   }
 
@@ -97,6 +99,7 @@ export class ProductStateService {
     await this.settingsRepo.setSettings({
       telegram_token: input.telegram_token ?? null,
       telegram_chat_id: input.telegram_chat_id ?? null,
+      enabled_providers: input.enabled_providers,
     });
 
     return { status: "ok" };
@@ -312,7 +315,7 @@ export class ProductStateService {
 
   private scheduleProgression(_jobId: string, plan: InternalDownloadPlan): void {
     void this.downloadQueue.enqueue(plan).catch((err) =>
-      console.error('[service] Failed to enqueue download:', err),
+      logger.error('[service] Failed to enqueue download:', err),
     );
   }
 

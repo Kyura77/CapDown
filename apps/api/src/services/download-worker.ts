@@ -3,6 +3,7 @@ import { getProviderAdapter } from '../providers/index.js';
 import type { ProviderId } from '@capdown/contracts';
 import type { IDownloadsRepository, ISettingsRepository, ILibraryRepository } from '../repositories/interfaces.js';
 import { telegramBot } from './telegram-bot.js';
+import { logger } from '../utils/logger.js';
 
 export interface DownloadPlanChapter {
   id: string;
@@ -94,7 +95,7 @@ async function uploadToTelegram(
   const chatId = settings.telegram_chat_id ?? process.env.CAPDOWN_TELEGRAM_CHAT_ID;
 
   if (!chatId || !telegramBot.isConfigured()) {
-    console.warn('[worker] Telegram not configured — page will not be stored in Telegram.');
+    logger.warn('[worker] Telegram not configured — page will not be stored in Telegram.');
     return null;
   }
 
@@ -135,7 +136,7 @@ export class DownloadWorker {
         try {
           pages = await adapter.getChapterPages(chapter.id, chapter.sourceUrl);
         } catch (error) {
-          console.error(`[worker] Failed to get pages for chapter "${chapter.title}":`, error);
+          logger.error(`[worker] Failed to get pages for chapter "${chapter.title}":`, error);
           continue;
         }
 
@@ -154,7 +155,7 @@ export class DownloadWorker {
         await this.markCompleted(jobId);
       }
     } catch (error) {
-      console.error(`[worker] Job ${jobId} failed:`, error);
+      logger.error(`[worker] Job ${jobId} failed:`, error);
       await this.markFailed(jobId, error instanceof Error ? error.message : String(error));
     } finally {
       this.abortControllers.delete(jobId);
@@ -187,14 +188,14 @@ export class DownloadWorker {
       const telegramFileId = await uploadToTelegram(buffer, page.filename, this.settingsRepo);
 
       if (!telegramFileId) {
-        console.warn(`[worker] Skipping Telegram persist for page ${page.index} of job ${jobId}`);
+        logger.warn(`[worker] Skipping Telegram persist for page ${page.index} of job ${jobId}`);
         return false;
       }
 
       await this.libraryRepo.upsertLibraryPage(chapterId, page.index, telegramFileId);
       return true;
     } catch (error) {
-      console.error(`[worker] Failed to download page ${page.url}:`, error);
+      logger.error(`[worker] Failed to download page ${page.url}:`, error);
       return false;
     } finally {
       this.semaphore.release();

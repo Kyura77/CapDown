@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useReducer, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AlertCircle, ChevronLeft, ChevronRight, Play, RefreshCw, Send, ShieldAlert, Trash2, Loader2, BookMarked } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -8,23 +8,42 @@ import { useLibrary } from '../context/LibraryContext';
 const PLACEHOLDER = 'https://placehold.co/500x750/10130f/62a33c?text=Cap';
 const fmt = id => (id ?? '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
+const initialState = {
+  detail: null,
+  error: null,
+  loading: true,
+  deleting: false,
+  auditing: false,
+  issues: [],
+  preparingTg: false,
+  coverErr: false,
+};
+
+function reducer(state, action) {
+  switch (action.type) {
+    case 'FETCH_START': return { ...state, loading: true, error: null };
+    case 'FETCH_SUCCESS': return { ...state, loading: false, detail: action.payload, error: null };
+    case 'FETCH_ERROR': return { ...state, loading: false, detail: null, error: action.payload };
+    case 'SET_DELETING': return { ...state, deleting: action.payload };
+    case 'SET_AUDITING': return { ...state, auditing: action.payload };
+    case 'SET_ISSUES': return { ...state, issues: action.payload };
+    case 'SET_PREPARING_TG': return { ...state, preparingTg: action.payload };
+    case 'SET_COVER_ERR': return { ...state, coverErr: action.payload };
+    case 'SET_DETAIL': return { ...state, detail: action.payload };
+    default: return state;
+  }
+}
+
 export default function MangaDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { library, refreshLibrary } = useLibrary();
 
-  const [detail, setDetail] = useState(null);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [deleting, setDeleting] = useState(false);
-  const [auditing, setAuditing] = useState(false);
-  const [issues, setIssues] = useState([]);
-  const [preparingTg, setPreparingTg] = useState(false);
-  const [coverErr, setCoverErr] = useState(false);
+  const [state, dispatch] = useReducer(reducer, initialState);
   const [search, setSearch] = useState('');
 
-  const manga = detail ?? library?.manga?.find(m => m.id === id);
-  const cover = coverErr ? PLACEHOLDER : (manga?.cover_url ?? PLACEHOLDER);
+  const manga = state.detail ?? library?.manga?.find(m => m.id === id);
+  const cover = state.coverErr ? PLACEHOLDER : (manga?.cover_url ?? PLACEHOLDER);
 
   const chapters = useMemo(() =>
     manga ? [...manga.chapters].sort((a, b) => parseFloat(b.number ?? 0) - parseFloat(a.number ?? 0)) : [],
@@ -38,25 +57,23 @@ export default function MangaDetail() {
 
   useEffect(() => {
     let alive = true;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoading(true);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setError(null);
+    dispatch({ type: 'FETCH_START' });
+    
     api.getManga(id)
-      .then(r => { if (alive) { setDetail(r.data); setError(null); } })
-      .catch(err => { if (alive) { setDetail(null); setError(err); } })
-      .finally(() => { if (alive) setLoading(false); });
+      .then(r => { if (alive) dispatch({ type: 'FETCH_SUCCESS', payload: r.data }) })
+      .catch(err => { if (alive) dispatch({ type: 'FETCH_ERROR', payload: err }) });
+      
     return () => { alive = false; };
   }, [id]);
 
-  if (loading && !manga) return (
+  if (state.loading && !manga) return (
     <div className="flex items-center justify-center h-[60vh] flex-col gap-3">
       <Loader2 size={32} className="animate-spin text-brand-400" />
       <p className="text-sm text-[var(--color-text-muted)]">Carregando obra...</p>
     </div>
   );
 
-  if (error) return (
+  if (state.error) return (
     <div className="flex flex-col items-center justify-center h-[60vh] gap-3">
       <span className="text-5xl">⚠️</span>
       <p className="text-red-400 text-sm text-center px-8">Falha ao carregar a obra.</p>
@@ -71,35 +88,40 @@ export default function MangaDetail() {
 
   const handleDelete = async () => {
     if (!confirm(`Excluir "${manga.title}"?`)) return;
-    setDeleting(true);
+    dispatch({ type: 'SET_DELETING', payload: true });
     try {
       await api.deleteManga(id);
       await refreshLibrary?.();
       navigate('/');
     } catch {
       alert('Erro ao excluir.');
-      setDeleting(false);
+      dispatch({ type: 'SET_DELETING', payload: false });
     }
   };
 
   const handleAudit = async () => {
-    setAuditing(true);
+    dispatch({ type: 'SET_AUDITING', payload: true });
     try {
       const r = await api.auditManga(id);
-      setIssues(r.data.discrepancies ?? []);
-    } catch { setIssues([]); }
-    finally { setAuditing(false); }
+      dispatch({ type: 'SET_ISSUES', payload: r.data.discrepancies ?? [] });
+    } catch { 
+      dispatch({ type: 'SET_ISSUES', payload: [] });
+    }
+    finally { dispatch({ type: 'SET_AUDITING', payload: false }); }
   };
 
   const handleTelegram = async () => {
-    setPreparingTg(true);
+    dispatch({ type: 'SET_PREPARING_TG', payload: true });
     try {
       const r = await api.prepareMangaTelegram(id);
       await refreshLibrary?.();
-      const d = await api.getManga(id); setDetail(d.data);
+      const d = await api.getManga(id); 
+      dispatch({ type: 'SET_DETAIL', payload: d.data });
       alert(r.data.failed_pages?.length ? `Telegram preparado com ${r.data.failed_pages.length} falha(s).` : 'Pronto!');
-    } catch { alert('Falha ao preparar para o Telegram.'); }
-    finally { setPreparingTg(false); }
+    } catch { 
+      alert('Falha ao preparar para o Telegram.'); 
+    }
+    finally { dispatch({ type: 'SET_PREPARING_TG', payload: false }); }
   };
 
   const firstChapter = chapters.length > 0 ? chapters[chapters.length - 1] : null;
@@ -129,10 +151,10 @@ export default function MangaDetail() {
           </button>
           <button
             onClick={handleDelete}
-            disabled={deleting}
+            disabled={state.deleting}
             className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 transition-colors"
           >
-            {deleting ? <RefreshCw size={13} className="animate-spin" /> : <Trash2 size={13} />}
+            {state.deleting ? <RefreshCw size={13} className="animate-spin" /> : <Trash2 size={13} />}
             Excluir
           </button>
         </div>
@@ -142,7 +164,7 @@ export default function MangaDetail() {
           <motion.img
             src={cover}
             alt={manga.title}
-            onError={() => setCoverErr(true)}
+            onError={() => dispatch({ type: 'SET_COVER_ERR', payload: true })}
             className="w-28 rounded-xl shadow-2xl border border-[var(--color-surface-border)] shrink-0 object-cover"
             style={{ aspectRatio: '2/3' }}
             initial={{ opacity: 0, scale: 0.92 }}
@@ -178,21 +200,21 @@ export default function MangaDetail() {
         {/* Actions */}
         <div className="flex gap-2 px-4 py-3 border-b border-[var(--color-surface-border)] overflow-x-auto">
           <ActionButton
-            icon={preparingTg ? <RefreshCw size={13} className="animate-spin" /> : <Send size={13} />}
+            icon={state.preparingTg ? <RefreshCw size={13} className="animate-spin" /> : <Send size={13} />}
             label="Telegram"
             onClick={handleTelegram}
-            disabled={preparingTg || !chapters.length}
+            disabled={state.preparingTg || !chapters.length}
           />
           <ActionButton
-            icon={auditing ? <RefreshCw size={13} className="animate-spin" /> : <ShieldAlert size={13} />}
+            icon={state.auditing ? <RefreshCw size={13} className="animate-spin" /> : <ShieldAlert size={13} />}
             label="Auditar"
             onClick={handleAudit}
-            disabled={auditing}
+            disabled={state.auditing}
           />
-          {issues.length > 0 && (
+          {state.issues.length > 0 && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-400 shrink-0">
               <AlertCircle size={13} />
-              {issues.length} capítulo(s) com problema
+              {state.issues.length} capítulo(s) com problema
             </div>
           )}
         </div>
@@ -220,7 +242,7 @@ export default function MangaDetail() {
           <AnimatePresence initial={false}>
             <div className="space-y-1">
               {filteredChapters.map((ch, i) => {
-                const hasIssue = issues.some(iss => iss.chapter_id === ch.id);
+                const hasIssue = state.issues.some(iss => iss.chapter_id === ch.id);
                 return (
                   <motion.button
                     key={ch.id}
